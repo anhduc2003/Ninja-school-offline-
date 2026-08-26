@@ -34,6 +34,8 @@ A MariaDB runtime E2E then used an isolated temporary datadir/socket/port. It st
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.
 
+Game-admin authentication was verified with a local MariaDB/HTTP fixture. A legacy plaintext game admin and a bcrypt `$2y$` game admin both received a session whose identity declares `authSource: "game"`; an existing game user without `model_has_roles.role_id = 1` was rejected. Revoking the role invalidated an existing session at the next request, and disabled or currently banned admin accounts were rejected. A separate legacy `panel_admin_users` fixture successfully received `auth_source` and `game_user_id` through `migrate-panel-auth.sh`; `grant-game-admin.sh` inserted the exact Java role mapping once and wrote a local audit event. These checks ran in a Linux sandbox and do not claim an Android-device test.
+
 ## Platform note
 
 The local browser check ran on desktop viewport. CSS includes a mobile drawer under 760px, single-column metric/form/module grids and 44px touch targets; the Windows/Android operational steps are documented in `WINDOWS-RUNBOOK.md` and the repository README.

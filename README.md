@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.8/install-v1.1.8.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.9/install-v1.1.9.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.8/install-v1.1.8.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.9/install-v1.1.9.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
@@ -135,7 +135,21 @@ Sau khi gọi `run-server.sh`, panel được mở cùng máy với game server 
 http://127.0.0.1:18080
 ```
 
-Panel mặc định bind `127.0.0.1`, vì vậy không public cổng quản trị hoặc MariaDB ra Internet. Lần chạy đầu tiên, panel tạo local admin `admin` với mật khẩu ngẫu nhiên, chỉ ghi trong `admin-panel/data/first-login.txt` có quyền file hạn chế. Đăng nhập, đổi mật khẩu ngay sau lần dùng đầu tiên, rồi xoá file mật khẩu tạm thời.
+Panel mặc định bind `127.0.0.1`, vì vậy không public cổng quản trị hoặc MariaDB ra Internet. Lần chạy đầu tiên, panel tạo account recovery local `admin` với mật khẩu bootstrap `1`, chỉ ghi trong `admin-panel/data/first-login.txt` có quyền file hạn chế; mật khẩu này chỉ áp dụng khi chưa có admin panel và không tự reset account cũ.
+
+Đăng nhập vận hành thường dùng **account game có quyền Admin thật**: account phải có `users.status = 1`, không bị ban còn hiệu lực, mật khẩu game hợp lệ, và mapping `model_has_roles` role ID `1` với model type `App\\Modules\\User\\Models\\User`. Panel tự đồng bộ account đó thành principal panel `admin` và tái kiểm tra role/status/ban ở mỗi request. Nếu account game chưa được gán quyền, chạy tại thư mục project rồi nhập xác nhận khi được hỏi:
+
+```bash
+bash scripts/grant-game-admin.sh TEN_TAI_KHOAN_GAME
+```
+
+Để nâng database panel cũ trước khi dùng user MariaDB least-privilege (`bootstrapSchema: false`), chạy một lần bằng user có quyền `ALTER`:
+
+```bash
+bash scripts/migrate-panel-auth.sh
+```
+
+Hai lệnh này không đổi mật khẩu game. Account recovery local vẫn còn cho tình huống khẩn cấp, nhưng không là nguồn quyền game và không phải cơ chế reset mật khẩu tự động.
 
 Panel có 23 mô-đun được phân nhóm cho người chơi, tài khoản, moderation, inventory, currency, rewards/lịch sử redemption, custom item, shop, event, rate, monster/boss, notice, maintenance, health, incident, audit, backup, leaderboard, analytics, jobs và bảo mật tài khoản. Các thao tác có write hiện được map vào schema SQL thật của game như `users`, `players`, `item`, `shopcoin_tb1`, `monster`, `gift_codes` và `options`; chúng dùng parameterized query, transaction, confirmation phrase và audit append-only. Inventory JSON và event points được mở ở chế độ chỉ đọc do state runtime phức tạp. Maintenance chỉ quản lý draft/approval/runbook; panel không giả vờ dừng Java server chỉ bằng SQL. Các thao tác item/shop/monster/options có thể cần restart hoặc reload cache Java để áp dụng vào tiến trình game đang giữ dữ liệu trong bộ nhớ.
 

@@ -15,4 +15,9 @@ describe("game account credentials", () => {
     await expect(verifyGamePassword("MatKhauGame_2026", hash)).resolves.toBe(true);
     await expect(verifyGamePassword("wrong-password", hash)).resolves.toBe(false);
   });
+
+  it("accepts a legacy plaintext password only on exact match", async () => {
+    await expect(verifyGamePassword("legacy-pass", "legacy-pass")).resolves.toBe(true);
+    await expect(verifyGamePassword("wrong-pass", "legacy-pass")).resolves.toBe(false);
+  });
 });

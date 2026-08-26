@@ -151,12 +151,13 @@ public class User {
             HashMap<String, Object> map = list.get(0);
             if (map != null) {
                 String passwordHash = (String) map.get("password");
-                if (!passwordHash.equals(password)) {
+                if (passwordHash.startsWith("$2")) {
+                    if (!StringUtils.checkPassword(passwordHash, password)) {
+                        return null;
+                    }
+                } else if (!passwordHash.equals(password)) {
                     return null;
                 }
-//                if (!StringUtils.checkPassword(passwordHash, password)) {
-//                    return null;
-//                }
             }
             return map;
         } catch (SQLException e) {

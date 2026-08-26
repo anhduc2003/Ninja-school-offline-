@@ -10,7 +10,7 @@ Trên Termux/Linux, sau khi MariaDB đang chạy:
 bash admin-panel/start-panel.sh
 ```
 
-Launcher dùng lock chống gọi trùng, cài dependency đúng theo `package-lock.json`, dọn PID stale, rồi chỉ báo thành công sau khi endpoint local `http://127.0.0.1:18080/api/system/health` phản hồi. Lần đầu, nếu chưa có `admin-panel/config.local.json`, panel lấy các khóa `db.*` từ `config.properties` của game để tạo cấu hình local. Các lần sau không tự ghi đè file local đó. Khi database chưa có admin panel, panel tạo user **`admin`** với mật khẩu bootstrap **`1`**, đồng thời ghi lại ở `admin-panel/data/first-login.txt`.
+Launcher dùng lock chống gọi trùng, cài dependency đúng theo `package-lock.json`, dọn PID stale, rồi chỉ báo thành công sau khi endpoint local `http://127.0.0.1:18080/api/system/health` phản hồi. Lần đầu, nếu chưa có `admin-panel/config.local.json`, panel lấy các khóa `db.*` từ `config.properties` của game để tạo cấu hình local. Các lần sau không tự ghi đè file local đó. Khi database chưa có admin panel, panel tạo **tài khoản recovery local** `admin` với mật khẩu bootstrap **`1`**, đồng thời ghi lại ở `admin-panel/data/first-login.txt`.
 
 Trên Windows:
 
@@ -22,9 +22,23 @@ Lệnh Windows cài dependency production nếu cần, kiểm tra health endpoin
 
 Mật khẩu bootstrap chỉ áp dụng khi bảng `panel_admin_users` **chưa có admin**; bản nâng cấp không tự ghi đè mật khẩu admin đang tồn tại. Nếu cần đặt một mật khẩu khác lúc khởi tạo, khởi động lần đầu với biến môi trường `NSO_PANEL_ADMIN_PASSWORD`. Không xóa bảng admin chỉ để trở về mật khẩu `1` trên server đang vận hành.
 
+## Đăng nhập bằng account game Admin
+
+Nguồn quyền chính của panel là **account game có quyền Admin thật**, không phải trường `users.role` cũ. Panel chỉ chấp nhận account thỏa cả bốn điều kiện sau: username/password game hợp lệ; `users.status = 1`; `ban_until` rỗng hoặc đã hết hạn; và bảng `model_has_roles` có `role_id = 1`, `model_type = 'App\\Modules\\User\\Models\\User'` đúng theo `User.isAdmin()` của Java. Khi đăng nhập thành công, panel tự tạo/cập nhật principal `auth_source=game`, gán role panel `admin`, cấp session HttpOnly/CSRF và ghi audit. Mọi request session sau đó tái kiểm tra quyền/status/ban game, nên thu hồi role hoặc khóa/ban account sẽ vô hiệu quyền panel ngay ở request tiếp theo.
+
+Mật khẩu game bcrypt `$2a$`, `$2b$`, `$2y$` được panel và Java kiểm tra bằng bcrypt. Account game legacy lưu plaintext vẫn hoạt động bằng so sánh exact tương thích ngược; hệ thống không tự đổi mật khẩu hoặc ghi mật khẩu/hash game vào audit. Với principal `auth_source=game`, trang **Bảo mật tài khoản** không đổi mật khẩu riêng panel: hãy đổi qua quy trình account game. Nếu username tồn tại trong `users`, panel ưu tiên kiểm tra account game đó và **không** dùng local recovery account cùng username như một đường vòng.
+
+Nếu account game chưa có role Admin, hãy dùng helper cục bộ sau khi xác định đúng username. Script yêu cầu nhập xác nhận, chỉ chèn mapping thiếu, không đổi mật khẩu và ghi `panel_audit_events` với actor `local-cli` nếu bảng audit đã có:
+
+```bash
+bash scripts/grant-game-admin.sh TEN_TAI_KHOAN_GAME
+```
+
+Sau đó đăng nhập panel bằng chính `TEN_TAI_KHOAN_GAME` và mật khẩu game. Account recovery local vẫn được giữ để khắc phục sự cố, nhưng mật khẩu `admin`/`1` **không tự reset** trên installation hoặc database đã tồn tại.
+
 ## An toàn vận hành
 
-Panel dùng session HttpOnly, SameSite=Strict, CSRF token, role-based access control và audit SQL append-only. Mọi write hiện có đều dùng parameterized query, allowlist cột/bảng và confirmation phrase. Các thay đổi item/shop/monster có thể cần reload cache hoặc restart Java server vì game giữ một phần dữ liệu trong bộ nhớ. Mật khẩu được đổi trong mô-đun **Bảo mật tài khoản**; thao tác đó thu hồi toàn bộ session của user hiện tại.
+Panel dùng session HttpOnly, SameSite=Strict, CSRF token, role-based access control và audit SQL append-only. Mọi write hiện có đều dùng parameterized query, allowlist cột/bảng và confirmation phrase. Các thay đổi item/shop/monster có thể cần reload cache hoặc restart Java server vì game giữ một phần dữ liệu trong bộ nhớ. Mật khẩu chỉ được đổi trong mô-đun **Bảo mật tài khoản** cho principal local `auth_source=panel`; thao tác đó thu hồi toàn bộ session của user hiện tại.
 
 Các view vận hành có dữ liệu thật gồm dashboard/health, người chơi, inventory JSON `bag/box/equiped/fashion` có chỉnh sửa offline với snapshot/audit, account status và ban, tiền tệ, item/shop/boss, gift code và lịch sử redemption, event points **chỉ đọc**, option rate/notify, leaderboard, analytics, incident/audit, backup, maintenance runbook và scheduler local. Vì lifecycle sự kiện, thông báo broadcast và nhiều cache nằm trong bộ nhớ Java, panel không giả vờ áp dụng các tác vụ đó live chỉ bằng SQL; các màn hình tương ứng nêu rõ khi cần restart/reload hoặc runbook thủ công.
 
@@ -57,5 +71,13 @@ FLUSH PRIVILEGES;
 ```
 
 Sau đó sửa `admin-panel/config.local.json` với `user: "nso_panel"`, mật khẩu vừa tạo, và đặt `"bootstrapSchema": false`. Cờ này ngăn panel thử `CREATE TABLE` ở mỗi lần chạy, để tài khoản giới hạn không cần đặc quyền `CREATE`. Nếu di chuyển sang database mới chưa có bảng `panel_*`, chạy **một lần** với tài khoản quản trị local và `bootstrapSchema: true`, rồi quay về tài khoản `nso_panel`. Không commit `config.local.json`, `data/`, `backups/` hay `reports/`.
+
+Với installation cũ đã có `panel_admin_users` nhưng chưa có cột `auth_source` và `game_user_id`, chạy **một lần** bằng user MariaDB có quyền `ALTER` trước khi chuyển về least-privilege:
+
+```bash
+bash scripts/migrate-panel-auth.sh
+```
+
+Migration chỉ thêm hai cột trên, không reset tài khoản/mật khẩu/session cũ và có thể chạy lại an toàn. Khi `bootstrapSchema: false`, backend không tự đòi `ALTER` ở mỗi lần chạy; thay vào đó nó dừng sớm với thông báo lệnh migration nếu schema chưa sẵn sàng.
 
 Không thay đổi `bindHost` thành `0.0.0.0` trừ khi bạn hiểu rủi ro mạng LAN và đã thay đổi mật khẩu admin mạnh. Không mở MariaDB `3306` ra Internet.
