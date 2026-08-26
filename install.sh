@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.4.3}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.4.4}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
@@ -42,7 +42,18 @@ printf '%s\n' '[2/6] Tải archive từ GitHub Release...'
 ARCHIVE_URL="https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_VERSION}/${RELEASE_ASSET}"
 DOWNLOAD_DIR="$(mktemp -d)"
 ARCHIVE_FILE="${DOWNLOAD_DIR}/${RELEASE_ASSET}"
+STAGED_DIR="${DOWNLOAD_DIR}/source"
+RUNTIME_BACKUP_DIR="${DOWNLOAD_DIR}/runtime-local"
 trap 'rm -rf "${DOWNLOAD_DIR}"' EXIT
+
+curl -fL --retry 5 --retry-all-errors --progress-bar -o "${ARCHIVE_FILE}" "${ARCHIVE_URL}"
+mkdir -p "${STAGED_DIR}"
+tar -xzf "${ARCHIVE_FILE}" -C "${STAGED_DIR}"
+if [ ! -f "${STAGED_DIR}/scripts/local-runtime-preserve.sh" ]; then
+  printf '%s\n' 'Archive Release thiếu helper bảo toàn runtime local; dừng để không làm mất dữ liệu cài đặt hiện có.' >&2
+  exit 1
+fi
+source "${STAGED_DIR}/scripts/local-runtime-preserve.sh"
 
 if [ -e "${INSTALL_DIR}" ]; then
   if [ ! -d "${INSTALL_DIR}/.git" ] && [ ! -f "${INSTALL_DIR}/.termux/release-installed" ]; then
@@ -59,18 +70,13 @@ if [ -e "${INSTALL_DIR}" ]; then
   if [ -x "${INSTALL_DIR}/admin-panel/stop-panel.sh" ]; then
     bash "${INSTALL_DIR}/admin-panel/stop-panel.sh" || true
   fi
-  if [ -f "${INSTALL_DIR}/config.properties" ]; then
-    cp "${INSTALL_DIR}/config.properties" "${DOWNLOAD_DIR}/config.properties.backup"
-  fi
+  backup_local_runtime "${INSTALL_DIR}" "${RUNTIME_BACKUP_DIR}"
   rm -rf "${INSTALL_DIR}"
 fi
 
-curl -fL --retry 5 --retry-all-errors --progress-bar -o "${ARCHIVE_FILE}" "${ARCHIVE_URL}"
 mkdir -p "${INSTALL_DIR}"
-tar -xzf "${ARCHIVE_FILE}" -C "${INSTALL_DIR}"
-if [ -f "${DOWNLOAD_DIR}/config.properties.backup" ]; then
-  cp "${DOWNLOAD_DIR}/config.properties.backup" "${INSTALL_DIR}/config.properties"
-fi
+cp -a "${STAGED_DIR}/." "${INSTALL_DIR}/"
+restore_local_runtime "${RUNTIME_BACKUP_DIR}" "${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}/.termux"
 printf '%s\n' "${RELEASE_VERSION}" > "${INSTALL_DIR}/.termux/release-installed"
 
