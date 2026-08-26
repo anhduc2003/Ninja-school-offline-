@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.1/install-v1.4.1.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.2/install-v1.4.2.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.1/install-v1.4.1.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.2/install-v1.4.2.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
@@ -140,6 +140,8 @@ Panel được ép bind `127.0.0.1`, vì vậy không public cổng quản trị
 Các thao tác ghi vẫn cần token CSRF local theo tiến trình, confirmation phrase, allowlist SQL/validation và audit với actor `local-only`. Account game Admin, role ID 1 và mật khẩu game không còn liên quan đến quyền vào panel. Các bảng panel-auth cũ có thể được giữ nguyên để bảo toàn lịch sử; local-only không sử dụng chúng.
 
 Panel có 23 mô-đun được phân nhóm cho người chơi, tài khoản, moderation, inventory, currency, rewards/lịch sử redemption, custom item, shop, Event Control, rate, monster/boss, notice, maintenance, health, incident, audit, backup, leaderboard, analytics, jobs và bảo mật tài khoản. Các thao tác có write hiện được map vào schema SQL thật của game như `users`, `players`, `item`, `shopcoin_tb1`, `monster`, `gift_codes` và `options`; chúng dùng parameterized query, transaction, confirmation phrase và audit append-only. **Chỉnh nhân vật** dùng form số trực quan; **Hành trang** dùng thẻ theo từng slot với tìm item catalog, số lượng, khóa, hạn dùng, upgrade và option chỉ số—panel tự serialize JSON đúng contract game. Nếu JSON cũ lỗi, editor bị khóa và không tự ghi đè dữ liệu. Event points vẫn chỉ đọc do state runtime phức tạp. Maintenance chỉ quản lý draft/approval/runbook; panel không giả vờ dừng Java server chỉ bằng SQL. Các thao tác item/shop/monster/options có thể cần restart hoặc reload cache Java để áp dụng vào tiến trình game đang giữ dữ liệu trong bộ nhớ.
+
+**Cửa hàng NPC** nay mở theo luồng: chọn cửa hàng → tìm/chọn item trong catalog → chọn Coin/Lượng/Yên và giá → khóa/hệ/hạn dùng → thêm option chỉ số theo từng dòng → lưu. Danh sách hàng hóa chỉ hiển thị store đang chọn, có tìm nhanh, sửa và xóa. Backend kiểm tra template item, store và mọi option ID trước khi ghi `store_data`; sau đó dừng/chạy lại Java hoặc reload ShopManager theo quy trình vận hành để nạp cache mới.
 
 **Event Control** lưu event class, hạn kết thúc và drop JSON thành plan `pending`, không chuyển event khi Java đang chạy. Drop JSON chỉ chấp nhận item ID tồn tại trong SQL catalog. Sau confirmation phrase, dừng Java bằng `bash scripts/stop-server.sh`, rồi chạy `bash run-server.sh`; launcher backup `config.properties`, áp dụng plan và nạp event ở lần boot kế tiếp. Source thêm **Lễ hội Sao Đêm** (`Exe_Z.event.StarFestival`, ID `9`): lồng đèn sao rơi từ quái, đổi 10 lồng đèn lấy Huyền tinh ngọc và tính top `star_lantern`. Chi tiết asset, giới hạn event hard-code và Windows runbook nằm trong [`admin-panel/README.md`](admin-panel/README.md).
 

@@ -365,6 +365,18 @@ function inventoryOptionIds(payload) {
   return [...ids];
 }
 
+function normalizeShopOptions(value) {
+  let options;
+  try { options = typeof value === "string" ? JSON.parse(value || "[]") : value; } catch { throw new Error("Option hàng hóa NPC phải là JSON hợp lệ."); }
+  if (!Array.isArray(options) || options.length > 20) throw new Error("Hàng hóa NPC chỉ nhận tối đa 20 option.");
+  return options.map((option, index) => {
+    if (!Array.isArray(option) || option.length !== 2) throw new Error(`Option hàng hóa NPC dòng ${index + 1} phải là [optionId, value].`);
+    const optionId = Number(option[0]); const value = Number(option[1]);
+    if (!Number.isInteger(optionId) || optionId < 0 || !Number.isInteger(value) || value < -2_000_000_000 || value > 2_000_000_000) throw new Error(`Option hàng hóa NPC dòng ${index + 1} không hợp lệ.`);
+    return [optionId, value];
+  });
+}
+
 function tcpStatus(host, port, timeout = 800) {
   return new Promise(resolve => {
     const socket = net.createConnection({ host, port });
@@ -519,12 +531,13 @@ async function api(req, res, url) {
     const requestedStore = url.searchParams.get("storeId");
     const storeId = requestedStore ? Number(requestedStore) : null;
     if (storeId !== null && (!Number.isInteger(storeId) || storeId < 0)) throw new Error("storeId không hợp lệ.");
-    const [stores, npcs, rows] = await Promise.all([
+    const [stores, npcs, rows, optionCatalog] = await Promise.all([
       pool.query("SELECT id, name FROM stores ORDER BY id"),
       pool.query("SELECT id, name, head, body, leg, menu FROM npc ORDER BY id LIMIT 150"),
       pool.query(`SELECT sd.id, sd.item_id, i.name AS item_name, sd.sys, sd.store, st.name AS store_name, sd.\`lock\`, sd.coin, sd.gold, sd.yen, sd.expire, sd.options FROM store_data sd JOIN stores st ON st.id = sd.store LEFT JOIN item i ON i.id = sd.item_id ${storeId === null ? "" : "WHERE sd.store = ?"} ORDER BY sd.store, sd.id LIMIT 400`, storeId === null ? [] : [storeId]),
+      pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
     ]);
-    writeJson(res, 200, { stores: stores[0], npcs: npcs[0], rows: rows[0], reloadRequired: true }); return;
+    writeJson(res, 200, { stores: stores[0], npcs: npcs[0], rows: rows[0], optionCatalog: optionCatalog[0], reloadRequired: true }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/monsters") {
     if (!requireUser(user, res, "analyst")) return;
@@ -838,11 +851,20 @@ async function api(req, res, url) {
   if (req.method === "POST" && ["/api/actions/npc-shop-item-create", "/api/actions/npc-shop-item-update"].includes(url.pathname)) {
     if (!requireUser(user, res, "operator")) return;
     const body = await readJson(req); const id = Number(body.id); const itemId = Number(body.itemId); const storeId = Number(body.storeId); const sys = Number(body.sys); const lock = Number(body.lock); const coin = Number(body.coin); const gold = Number(body.gold); const yen = Number(body.yen); const expire = Number(body.expire);
-    let options; try { const parsed = JSON.parse(body.options || "[]"); if (!Array.isArray(parsed)) throw new Error(); options = JSON.stringify(parsed); } catch { throw new Error("Options phải là JSON array hợp lệ."); }
+    const normalizedOptions = normalizeShopOptions(body.options || []);
     const isUpdate = url.pathname.endsWith("-update"); const phrase = isUpdate ? `APPLY NPC SHOP ITEM ${id}` : `ADD NPC SHOP ITEM ${storeId}`;
     if (![itemId, storeId, sys, lock, coin, gold, yen, expire].every(Number.isSafeInteger) || (isUpdate && (!Number.isInteger(id) || id < 1)) || itemId < 0 || storeId < 0 || ![0, 1].includes(lock) || Math.min(coin, gold, yen) < 0 || expire < -1 || body.confirmation !== phrase) throw new Error("Dữ liệu hàng hóa NPC hoặc mã xác nhận không hợp lệ.");
-    const [[itemRows], [storeRows]] = await Promise.all([pool.query("SELECT id FROM item WHERE id = ? LIMIT 1", [itemId]), pool.query("SELECT id FROM stores WHERE id = ? LIMIT 1", [storeId])]);
+    const optionIds = [...new Set(normalizedOptions.map(option => option[0]))];
+    const [[itemRows], [storeRows], [optionRows]] = await Promise.all([
+      pool.query("SELECT id FROM item WHERE id = ? LIMIT 1", [itemId]),
+      pool.query("SELECT id FROM stores WHERE id = ? LIMIT 1", [storeId]),
+      optionIds.length ? pool.query(`SELECT id FROM item_option WHERE id IN (${optionIds.map(() => "?").join(",")})`, optionIds) : Promise.resolve([[]]),
+    ]);
     if (!itemRows[0] || !storeRows[0]) throw new Error("Item template hoặc store không tồn tại.");
+    const knownOptionIds = new Set(optionRows.map(row => Number(row.id)));
+    const missingOptions = optionIds.filter(id => !knownOptionIds.has(id));
+    if (missingOptions.length) throw new Error(`Option hàng hóa NPC không tồn tại: ${missingOptions.join(", ")}.`);
+    const options = JSON.stringify(normalizedOptions);
     if (!isUpdate) {
       const [result] = await pool.query("INSERT INTO store_data (item_id, sys, store, `lock`, coin, gold, yen, expire, options) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [itemId, sys, storeId, lock, coin, gold, yen, expire, options]);
       await audit(user, "shop", "npc_store_item.created", "store_data", String(result.insertId), "success", { itemId, storeId, sys, lock, coin, gold, yen, expire });

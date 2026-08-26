@@ -28,6 +28,12 @@ Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong t
 
 Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java, không public MariaDB và không mô phỏng lệnh runtime không có contract SQL.
 
+## Shop NPC trực quan
+
+Mở **Cửa hàng** rồi chọn store NPC. Danh sách bên phải chỉ hiển thị hàng hóa của store đang chọn; dùng ô tìm để lọc theo tên hoặc ID item. Khi thêm/sửa hàng, bấm **Tìm/chọn item**, chọn loại tiền và giá, rồi cấu hình khóa, hệ, hạn dùng và option chỉ số bằng từng dòng. Không cần nhập `itemId`, `expire` mili-giây hay `Options JSON` thủ công.
+
+Sau khi lưu/xóa/tạo store, backend vẫn yêu cầu confirmation phrase, xác thực item/store/option ID, lưu audit và báo cần reload/restart Java. Mapping NPC menu sang store do mã Java quyết định, nên danh sách NPC trong panel chỉ dùng để tham chiếu; không thay đổi mapping runtime từ browser.
+
 ## Chỉnh nhân vật và hành trang trực quan
 
 Trong **Người chơi**, tìm nhân vật rồi chọn **Chỉnh nhân vật**. Chỉ số tiềm năng, kỹ năng, EXP, số ô túi/rương và bốn chỉ số potential được nhập bằng các ô số có nhãn; không cần nhập mảng JSON.
