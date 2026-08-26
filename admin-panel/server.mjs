@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import net from "node:net";
 import mysql from "mysql2/promise";
 import { hashPassword, hasRole, randomToken, tokenHash, verifyPassword } from "./lib/security.mjs";
+import { availableColumns } from "./lib/schema.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -17,6 +18,7 @@ const CONFIG_PATH = join(__dirname, "config.local.json");
 const FIRST_LOGIN_PATH = join(DATA_DIR, "first-login.txt");
 const MAX_BODY_SIZE = 1_000_000;
 const SESSION_COOKIE = "nso_admin_session";
+const tableColumnsCache = new Map();
 const modules = [
   ["dashboard", "Tổng quan", "Vận hành", "Sức khỏe game, MariaDB, port 14444 và hoạt động gần đây", "analyst"],
   ["players", "Người chơi", "Người chơi", "Tìm kiếm nhân vật, trạng thái online, map, level và tài sản", "analyst"],
@@ -25,6 +27,7 @@ const modules = [
   ["inventory", "Túi đồ", "Kinh tế", "Xem JSON bag/box và cấp phát theo allowlist", "operator"],
   ["currency", "Tiền tệ", "Kinh tế", "Lượng, coin, xu, yên với transaction và xác nhận", "operator"],
   ["rewards", "Phần thưởng", "Kinh tế", "Gift code, reward delivery và theo dõi lịch sử", "operator"],
+  ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
   ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Chỉnh metadata item có validation", "operator"],
   ["shop", "Cửa hàng", "Nội dung", "Giá, nâng cấp, hệ và options shopcoin", "operator"],
   ["events", "Sự kiện", "Nội dung", "Event point, reward và lifecycle sự kiện", "operator"],
@@ -39,6 +42,7 @@ const modules = [
   ["leaderboards", "Bảng xếp hạng", "Phân tích", "Danh sách top và refresh reference", "analyst"],
   ["analytics", "Phân tích", "Phân tích", "KPI player, economy và báo cáo vận hành", "analyst"],
   ["jobs", "Tác vụ định kỳ", "Kiểm soát", "Health check, cleanup, report và transition đã phê duyệt", "admin"],
+  ["security", "Bảo mật tài khoản", "Kiểm soát", "Đổi mật khẩu panel local và thu hồi session", "viewer"],
 ].map(([id, label, group, description, role]) => ({ id, label, group, description, role }));
 
 function ensureLocalConfig() {
@@ -63,6 +67,17 @@ const pool = mysql.createPool({
   namedPlaceholders: false,
 });
 
+async function tableColumns(tableName) {
+  if (!/^[a-z_]+$/.test(tableName)) throw new Error("Tên bảng schema không hợp lệ.");
+  if (!tableColumnsCache.has(tableName)) {
+    const [rows] = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?",
+      [tableName],
+    );
+    tableColumnsCache.set(tableName, new Set(rows.map(row => row.column_name)));
+  }
+  return tableColumnsCache.get(tableName);
+}
 
 async function ensureSchema() {
   const statements = [
@@ -132,6 +147,19 @@ async function ensureSchema() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX panel_alerts_key_status_idx (alert_key, status),
       INDEX panel_alerts_status_created_idx (status, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_maintenance_windows (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      starts_at DATETIME NOT NULL,
+      ends_at DATETIME NOT NULL,
+      message VARCHAR(500) NOT NULL,
+      status ENUM('draft','scheduled','closed','cancelled') NOT NULL DEFAULT 'draft',
+      created_by INT NOT NULL,
+      approved_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX panel_maintenance_time_idx (starts_at, ends_at),
+      INDEX panel_maintenance_status_idx (status, starts_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   ];
   for (const statement of statements) await pool.query(statement);
@@ -320,6 +348,19 @@ async function api(req, res, url) {
     const [rows] = await pool.query("SELECT id, username, status, activated, online, luong, coin, ban_until, last_login_at FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 50", [q]);
     writeJson(res, 200, { rows }); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/inventory") {
+    if (!requireUser(user, res, "analyst")) return;
+    const playerId = Number(url.searchParams.get("playerId"));
+    if (!Number.isInteger(playerId) || playerId < 1) throw new Error("playerId không hợp lệ.");
+    const columns = await tableColumns("players");
+    const selected = availableColumns(columns, ["id", "user_id", "name", "online", "numberCellBag", "numberCellBox", "bag", "box", "equiped", "fashion", "mount", "mask_box", "collection_box"]);
+    if (!selected.includes("id")) throw new Error("Bảng players không có cột id bắt buộc.");
+    const [rows] = await pool.query(
+      `SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1`,
+      [playerId],
+    );
+    writeJson(res, 200, { row: rows[0] || null }); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/shop") {
     if (!requireUser(user, res, "analyst")) return;
     const [rows] = await pool.query("SELECT s.id, s.idItem, i.name AS itemName, s.price, s.upgrade, s.system, s.options FROM shopcoin_tb1 s LEFT JOIN item i ON i.id = s.idItem ORDER BY s.id LIMIT 200");
@@ -336,10 +377,82 @@ async function api(req, res, url) {
     const [rows] = await pool.query("SELECT id, server_id, type, code, coin, gold, yen, items, status, expires_at, created_at FROM gift_codes ORDER BY created_at DESC LIMIT 100");
     writeJson(res, 200, { rows }); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/reward-history") {
+    if (!requireUser(user, res, "analyst")) return;
+    const historyColumns = await tableColumns("gift_code_histories");
+    if (historyColumns.size === 0) { writeJson(res, 200, { rows: [], unavailable: "Schema game hiện tại không có gift_code_histories." }); return; }
+    const [rows] = await pool.query(
+      `SELECT h.id, h.gift_code, h.created_at, h.updated_at, p.name AS player_name, u.username
+       FROM gift_code_histories h
+       LEFT JOIN players p ON p.id = h.player_id
+       LEFT JOIN users u ON u.id = h.user_id
+       ORDER BY h.created_at DESC LIMIT 150`,
+    );
+    writeJson(res, 200, { rows }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/events") {
+    if (!requireUser(user, res, "analyst")) return;
+    const eventColumns = await tableColumns("event_points");
+    if (eventColumns.size === 0) { writeJson(res, 200, { rows: [], summary: [], unavailable: "Schema game hiện tại không có event_points." }); return; }
+    const requestedEvent = url.searchParams.get("eventId");
+    const eventId = requestedEvent === null || requestedEvent === "" ? null : Number(requestedEvent);
+    if (eventId !== null && (!Number.isInteger(eventId) || eventId < 0)) throw new Error("eventId không hợp lệ.");
+    const filter = eventId === null ? "" : "WHERE ep.event_id = ?";
+    const params = eventId === null ? [] : [eventId];
+    const [rows] = await pool.query(
+      `SELECT ep.id, ep.event_id, ep.player_id, p.name AS player_name, ep.point
+       FROM event_points ep LEFT JOIN players p ON p.id = ep.player_id
+       ${filter} ORDER BY ep.event_id, ep.id DESC LIMIT 200`,
+      params,
+    );
+    const [summary] = await pool.query(
+      "SELECT event_id, COUNT(*) AS player_count FROM event_points GROUP BY event_id ORDER BY event_id",
+    );
+    writeJson(res, 200, { rows, summary }); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/options") {
     if (!requireUser(user, res, "operator")) return;
     const [rows] = await pool.query("SELECT id, `key`, value FROM options WHERE `key` IN ('expserver','levelnjtl','notify') ORDER BY `key`");
     writeJson(res, 200, { rows, editableKeys: ["expserver", "levelnjtl", "notify"] }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/leaderboards") {
+    if (!requireUser(user, res, "analyst")) return;
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const [playersColumns, warColumns, rankingColumns] = await Promise.all([tableColumns("players"), tableColumns("top_war"), tableColumns("ranking_list")]);
+    const [[boss], [vxmm], [war], [ranking]] = await Promise.all([
+      playersColumns.has("topBoss") ? pool.query("SELECT id, name, topBoss, online FROM players WHERE topBoss > 0 ORDER BY topBoss DESC, id ASC LIMIT 30") : Promise.resolve([[]]),
+      playersColumns.has("topvxmm") ? pool.query("SELECT id, name, topvxmm, online FROM players WHERE topvxmm > 0 ORDER BY topvxmm DESC, id ASC LIMIT 30") : Promise.resolve([[]]),
+      warColumns.has("player_id") ? pool.query("SELECT player_id, name, SUM(point) AS points, type FROM top_war WHERE year = ? AND month = ? GROUP BY player_id, name, type ORDER BY points DESC LIMIT 30", [year, month]) : Promise.resolve([[]]),
+      rankingColumns.has("player_id") ? pool.query("SELECT r.match_id, r.rank_at, p.name AS player_name, r.updated_at FROM ranking_list r LEFT JOIN players p ON p.id = r.player_id ORDER BY r.updated_at DESC LIMIT 30") : Promise.resolve([[]]),
+    ]);
+    writeJson(res, 200, { boss, vxmm, war, ranking, period: { year, month } }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/analytics") {
+    if (!requireUser(user, res, "analyst")) return;
+    const columns = await tableColumns("players");
+    const has = column => columns.has(column);
+    const online = has("online") ? "SUM(online = 1)" : "0";
+    const activated = has("activated") ? "SUM(activated = 1)" : "0";
+    const playerClass = has("class") ? "`class`" : "0";
+    const lastLogin = has("last_login_time") ? "last_login_time" : "0";
+    const xu = has("xu") ? "xu" : "0";
+    const yen = has("yen") ? "yen" : "0";
+    const xuBox = has("xuInBox") ? "xuInBox" : "0";
+    const [[totalsRows], [classes], [daily], [economyRows], [recent]] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS players, ${online} AS online_players, ${activated} AS activated_players FROM players`),
+      pool.query(`SELECT ${playerClass} AS class, COUNT(*) AS players, ${online} AS online_players FROM players GROUP BY ${playerClass} ORDER BY players DESC, class ASC`),
+      has("last_login_time") ? pool.query("SELECT DATE(FROM_UNIXTIME(last_login_time / 1000)) AS day, COUNT(*) AS players FROM players WHERE last_login_time >= UNIX_TIMESTAMP(DATE_SUB(UTC_DATE(), INTERVAL 6 DAY)) * 1000 GROUP BY DATE(FROM_UNIXTIME(last_login_time / 1000)) ORDER BY day") : Promise.resolve([[]]),
+      pool.query(`SELECT CAST(COALESCE(SUM(${xu}), 0) AS CHAR) AS total_xu, CAST(COALESCE(SUM(${yen}), 0) AS CHAR) AS total_yen, CAST(COALESCE(SUM(${xuBox}), 0) AS CHAR) AS total_xu_box FROM players`),
+      pool.query(`SELECT id, ${has("name") ? "name" : "'' AS name"}, ${has("online") ? "online" : "0 AS online"}, ${lastLogin} AS last_login_time, ${xu} AS xu, ${yen} AS yen FROM players ORDER BY ${lastLogin} DESC LIMIT 20`),
+    ]);
+    writeJson(res, 200, { totals: totalsRows[0] || {}, classes, daily, economy: economyRows[0] || {}, recent }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/maintenance") {
+    if (!requireUser(user, res, "admin")) return;
+    const [rows] = await pool.query("SELECT id, starts_at, ends_at, message, status, created_by, approved_by, created_at FROM panel_maintenance_windows ORDER BY starts_at DESC LIMIT 100");
+    writeJson(res, 200, { rows, runtimeLimit: "Kế hoạch chỉ được lưu/audit trong panel. Game Java không có maintenance flag SQL để panel áp dụng live; cần thực hiện restart theo runbook đã duyệt." }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/jobs") {
     if (!requireUser(user, res, "admin")) return;
@@ -362,8 +475,16 @@ async function api(req, res, url) {
     const status = Number(body.status);
     const id = Number(body.userId);
     if (!Number.isInteger(id) || ![0, 1, 2].includes(status) || body.confirmation !== `APPLY ACCOUNT ${id}`) throw new Error("Xác nhận không hợp lệ.");
-    await pool.query("UPDATE users SET status = ? WHERE id = ? LIMIT 1", [status, id]);
+    await pool.query("UPDATE users SET status = ?, activated = CASE WHEN ? = 1 THEN 1 ELSE activated END, ban_until = CASE WHEN ? = 1 THEN NULL ELSE ban_until END WHERE id = ? LIMIT 1", [status, status, status, id]);
     await audit(user, "accounts", "account.status.updated", "user", String(id), "success", { status });
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/account-ban") {
+    if (!requireUser(user, res, "moderator")) return;
+    const body = await readJson(req); const id = Number(body.userId); const banUntil = new Date(body.banUntil);
+    if (!Number.isInteger(id) || id < 1 || Number.isNaN(banUntil.getTime()) || banUntil.getTime() <= Date.now() || body.confirmation !== `BAN ACCOUNT ${id}`) throw new Error("Dữ liệu ban hoặc mã xác nhận không hợp lệ.");
+    await pool.query("UPDATE users SET status = 2, ban_until = ? WHERE id = ? LIMIT 1", [banUntil, id]);
+    await audit(user, "moderation", "account.banned", "user", String(id), "success", { banUntil: banUntil.toISOString() });
     writeJson(res, 200, { ok: true }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/alert-ack") {
@@ -460,6 +581,23 @@ async function api(req, res, url) {
     await audit(user, "jobs", "job.enabled", "panel_job", String(id), "success");
     writeJson(res, 200, { ok: true }); return;
   }
+  if (req.method === "POST" && url.pathname === "/api/actions/maintenance-draft") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const startsAt = new Date(body.startsAt); const endsAt = new Date(body.endsAt); const message = String(body.message || "").trim().slice(0, 500);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || startsAt >= endsAt || !message || body.confirmation !== "CREATE MAINTENANCE DRAFT") throw new Error("Kế hoạch bảo trì hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("INSERT INTO panel_maintenance_windows (starts_at, ends_at, message, status, created_by) VALUES (?, ?, ?, 'draft', ?)", [startsAt, endsAt, message, user.id]);
+    await audit(user, "maintenance", "maintenance.drafted", "maintenance_window", String(result.insertId), "success", { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });
+    writeJson(res, 200, { ok: true, id: result.insertId }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/maintenance-approve") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `APPROVE MAINTENANCE ${id}`) throw new Error("Kế hoạch bảo trì hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE panel_maintenance_windows SET status = 'scheduled', approved_by = ? WHERE id = ? AND status = 'draft' LIMIT 1", [user.id, id]);
+    if (!result.affectedRows) throw new Error("Chỉ có thể phê duyệt maintenance ở trạng thái draft.");
+    await audit(user, "maintenance", "maintenance.approved", "maintenance_window", String(id), "success");
+    writeJson(res, 200, { ok: true, runtimeActionRequired: "Thực hiện dừng/khởi động game theo runbook khi tới giờ; panel không tự tác động runtime Java." }); return;
+  }
   if (req.method === "POST" && url.pathname === "/api/auth/password") {
     if (!requireUser(user, res, "viewer")) return;
     const body = await readJson(req); const currentPassword = String(body.currentPassword || ""); const newPassword = String(body.newPassword || "");
@@ -498,7 +636,7 @@ function serveStatic(req, res, url) {
   createReadStream(file).pipe(res);
 }
 
-await ensureSchema();
+if (config.bootstrapSchema !== false) await ensureSchema();
 const server = createServer(async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
