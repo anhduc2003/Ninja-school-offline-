@@ -13,6 +13,12 @@ fi
 node "${ROOT_DIR}/admin-panel/apply-event-plan.mjs"
 
 bash "${ROOT_DIR}/scripts/start-db.sh"
+if [ "${NSO_GIFT_CODE_MIGRATION:-1}" = "1" ]; then
+  printf '%s\n' 'Kiểm tra migration Gift Code lifecycle trước khi mở Java/panel...'
+  bash "${ROOT_DIR}/scripts/migrate-gift-code-lifecycle.sh"
+else
+  printf '%s\n' 'Bỏ qua migration Gift Code lifecycle theo NSO_GIFT_CODE_MIGRATION=0.'
+fi
 bash "${ROOT_DIR}/scripts/start-server.sh"
 bash "${ROOT_DIR}/admin-panel/start-panel.sh"
 bash "${ROOT_DIR}/admin-panel/start-scheduler.sh"

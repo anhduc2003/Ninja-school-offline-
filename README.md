@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.5/install-v1.4.5.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.6/install-v1.4.6.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.5/install-v1.4.5.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.6/install-v1.4.6.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, tải/kiểm tra archive trước rồi giữ lại **toàn bộ runtime local được ignore**: `config.properties`, `.termux` (bao gồm database local), `logs`, `admin-panel/config.local.json`, `admin-panel/data`, backup và report. Source mới chỉ thay code tracked; PID stale bị xóa để launcher tạo tiến trình mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
@@ -153,15 +153,13 @@ Panel có 23 mô-đun được phân nhóm cho người chơi, tài khoản, mod
 
 **Event Control** lưu event class, hạn kết thúc và drop JSON thành plan `pending`, không chuyển event khi Java đang chạy. Drop JSON chỉ chấp nhận item ID tồn tại trong SQL catalog. Sau confirmation phrase, dừng Java bằng `bash scripts/stop-server.sh`, rồi chạy `bash run-server.sh`; launcher backup `config.properties`, áp dụng plan và nạp event ở lần boot kế tiếp. Source thêm **Lễ hội Sao Đêm** (`Exe_Z.event.StarFestival`, ID `9`): lồng đèn sao rơi từ quái, đổi 10 lồng đèn lấy Huyền tinh ngọc và tính top `star_lantern`. Chi tiết asset, giới hạn event hard-code và Windows runbook nằm trong [`admin-panel/README.md`](admin-panel/README.md).
 
-**Gift Code Control** quản lý code, tiền tệ, reward item/options, khóa/upgrade/hạn item, thời gian bắt đầu/kết thúc, quota tổng, bật/tắt và history redemption. Java kiểm tra lifecycle và tăng quota atomically khi người chơi nhập code, nên code tự đến lịch/hết hạn ngay cả khi panel tắt; không dùng scheduler. Database cũ cần migration một lần trước khi dùng module chi tiết:
+**Gift Code Control** quản lý code, tiền tệ, reward item/options, khóa/upgrade/hạn item, thời gian bắt đầu/kết thúc, quota tổng, bật/tắt và history redemption. Java kiểm tra lifecycle và tăng quota atomically khi người chơi nhập code, nên code tự đến lịch/hết hạn ngay cả khi panel tắt; không dùng scheduler. Từ launcher v1.4.6, mỗi lần `run-server.sh` chạy nó tự kiểm tra migration lifecycle sau khi MariaDB local sẵn sàng, trước Java/panel. Migration idempotent—chỉ thêm cột/index còn thiếu và không import/reset dữ liệu cũ.
 
 ```bash
-bash scripts/stop-server.sh
-bash scripts/migrate-gift-code-lifecycle.sh
 bash run-server.sh
 ```
 
-Migration chỉ thêm cột/index lifecycle cho `gift_codes`, không xóa dữ liệu. Không sửa/xóa Gift Code đã có redemption; disable code cũ rồi tạo code mới để giữ đối soát.
+Nếu launcher báo migration không thành công (ví dụ credential local không có quyền `ALTER`), xem `tail -n 50 logs/gift-code-migration.log` rồi chạy lại đúng một lệnh migration bằng user MariaDB local có quyền ALTER: `bash scripts/migrate-gift-code-lifecycle.sh`. Không sửa/xóa Gift Code đã có redemption; disable code cũ rồi tạo code mới để giữ đối soát.
 
 Lịch local chạy bằng `admin-panel/start-scheduler.sh`, được launcher gọi sau panel. Job khởi tạo ở trạng thái **draft/disabled**; chỉ admin có thể phê duyệt và bật trong trang `Tác vụ định kỳ`. Scheduler chỉ tự thực thi `health_check`, `daily_report` và `cleanup`. Event hoặc maintenance transition được ghi audit là blocked cho đến khi có runbook nghiệp vụ riêng, tránh thay đổi gameplay không được đánh giá.
 

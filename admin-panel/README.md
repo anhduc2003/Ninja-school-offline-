@@ -81,15 +81,14 @@ Gift Code Control Center quản lý mã, phạm vi server, tiền tệ, reward n
 | `type=1` | Mỗi account chỉ đổi một lần, dựa trên `gift_code_histories`. |
 | `expire_days` reward | Được tính từ lúc người chơi đổi code, không phải từ lúc quản trị viên tạo code. |
 
-Với database đã tồn tại trước bản Gift Code lifecycle, chạy migration **một lần** bằng user MariaDB có quyền `ALTER` sau khi dừng Java game:
+Từ launcher v1.4.6, `bash run-server.sh` tự kiểm tra migration lifecycle sau khi MariaDB local sẵn sàng và trước Java/panel. Migration là idempotent, chỉ thêm cột/index thiếu. Với database cũ hoặc khi log báo thiếu quyền `ALTER`, có thể chạy migration thủ công một lần bằng user MariaDB local có quyền phù hợp:
 
 ```bash
-bash scripts/stop-server.sh
 bash scripts/migrate-gift-code-lifecycle.sh
 bash run-server.sh
 ```
 
-Migration chỉ bổ sung `starts_at`, `max_redemptions`, `redemption_count`, `disabled` và index vào `gift_codes`; không xóa code, reward hoặc lịch sử đổi. Sau đó panel user quyền tối thiểu chỉ cần `SELECT, INSERT, UPDATE, DELETE`; không cần quyền ALTER ở các lần khởi động thường.
+Migration chỉ bổ sung `starts_at`, `max_redemptions`, `redemption_count`, `disabled` và index vào `gift_codes`; không xóa code, reward hoặc lịch sử đổi. Nếu auto-migration lỗi, xem `tail -n 50 logs/gift-code-migration.log`. Sau đó panel user quyền tối thiểu chỉ cần `SELECT, INSERT, UPDATE, DELETE`; không cần quyền ALTER ở các lần khởi động thường khi schema đã sẵn sàng.
 
 Reward item được canonicalize trước khi lưu: item ID phải tồn tại trong bảng `item`, option có dạng `[[optionId,value]]` và option ID phải có trong `item_option`. Không thể sửa reward/lifecycle hay xóa code đã có redemption; hãy tắt code cũ và tạo code mới để audit/lịch sử đổi không bị sai lệch.
 
