@@ -14,6 +14,14 @@ The local MariaDB fixture E2E test created a game account and confirmed a `$2y$`
 
 The hardened Termux/Linux launcher passed Bash syntax checking, reinstalled production dependencies from the lockfile when its fingerprint changed, started an isolated local Node process and reached `GET /api/system/health` before declaring readiness. A separate bootstrap check temporarily removed `config.local.json`, confirmed a new local file was created from `config.properties`, then restored the fixture configuration; it did not claim a real Android-device test.
 
+After the player-state extension, the desktop control room rendered the **Người chơi** module with an explicit offline-only warning, snapshot/audit explanation and player search entry point before any mutation control is displayed. The fixture dashboard showed audit events for the verified stats and inventory mutations; TCP 14444 remained intentionally closed because no Java game process ran in the fixture.
+
+The player search interface was also checked with a non-matching fixture query and rendered its empty state without exposing a mutation action.
+
+A matching fixture query rendered one offline player with a visible **Chỉnh nhân vật** action, confirming the safe edit entry point is only attached to an identified player result.
+
+The player editor rendered the allowlisted point, skill point, EXP, slot and potential controls plus separate bag/box/equiped/fashion JSON editors. The item catalog rendered a populated type selector with per-type counts, a gender selector, search control and table results, confirming the new filtering controls are present in the desktop control room.
+
 ## Automated checks
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.

@@ -34,6 +34,16 @@ Mô-đun **Vật phẩm tùy biến** tạo/chỉnh catalog `item` với các fi
 
 > `StoreManager` và item catalog được Java tải vào memory. Sau khi đổi item, `stores` hoặc `store_data`, hãy thực hiện reload/restart Java theo runbook đã duyệt trước khi coi thay đổi đã áp dụng cho người chơi online. Panel SQL-only không tự chạy lệnh reload runtime.
 
+## Chỉnh chỉ số nhân vật và hành trang
+
+Mô-đun **Người chơi** mở workflow chỉnh trực tiếp cho `point`, `spoint`, `potential`, EXP trong `players.data.exp`, số ô túi/rương và bốn JSON hành trang `bag`, `box`, `equiped`, `fashion`. Java tự suy level từ EXP; panel không cho nhập level giả. Mọi write bị từ chối nếu `players.online = 1`, chạy trong SQL transaction, cần confirmation phrase và tạo bản chụp trước/sau ở `panel_player_snapshots` kèm audit. Người chơi phải thoát game hoàn toàn rồi đăng nhập lại để Java nạp state mới.
+
+Hành trang chỉ chấp nhận JSON array theo Item/Equip contract của Java, giới hạn số slot, cấm field lạ/index trùng, kiểm tra template item mới có trong catalog và kiểm tra equipment type cho `equiped`/`fashion`. `mount`, `bijuu`, `effect`, `mask_box` và `collection_box` chưa được mở ghi vì có contract chuyên biệt hoặc state runtime bổ sung.
+
+Khi nâng từ bản cũ và dùng `bootstrapSchema: false`, hãy tạm thời chạy panel một lần với tài khoản MariaDB có quyền `CREATE` và `bootstrapSchema: true` để tạo bảng `panel_player_snapshots`; sau đó trả lại tài khoản ít quyền và đặt `bootstrapSchema: false`. Không xóa snapshot trước khi đã đối soát audit hoặc hoàn tất quy trình phục hồi nội bộ.
+
+Mô-đun **Vật phẩm tùy biến** hỗ trợ tìm theo ID/tên, lọc theo `type` thực có trong catalog cùng tùy chọn `gender`; mỗi lựa chọn type hiển thị số template tương ứng. Filter chỉ đọc, còn create/update item vẫn có confirmation và audit riêng.
+
 ## MariaDB local với quyền tối thiểu
 
 Mẫu cấu hình mặc định tương thích máy game cũ (`root` không mật khẩu) để bootstrap lần đầu, nhưng **không nên dùng root lâu dài**. Sau khi panel đã tạo các bảng `panel_*` ở lần đầu khởi động, đăng nhập MariaDB local và tạo một user riêng. Thay `USE nsoz` nếu bạn đã đổi tên database game.

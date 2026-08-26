@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.4/install-v1.1.4.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.5/install-v1.1.5.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.4/install-v1.1.4.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.5/install-v1.1.5.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.

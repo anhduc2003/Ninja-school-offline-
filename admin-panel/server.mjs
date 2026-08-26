@@ -9,6 +9,7 @@ import mysql from "mysql2/promise";
 import { hashPassword, hasRole, randomToken, tokenHash, verifyPassword } from "./lib/security.mjs";
 import { availableColumns } from "./lib/schema.mjs";
 import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
+import { existingItemIds, validateInventory, validatePlayerStats } from "./lib/player-state.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -27,7 +28,7 @@ const modules = [
   ["players", "Người chơi", "Người chơi", "Tìm kiếm nhân vật, trạng thái online, map, level và tài sản", "analyst"],
   ["accounts", "Tài khoản", "Người chơi", "Tạo account game, tra cứu, lock, unlock, ban và kích hoạt", "moderator"],
   ["moderation", "Kiểm duyệt", "An toàn", "Ban có thời hạn và account status với audit; không giả lập kick/mute runtime", "moderator"],
-  ["inventory", "Túi đồ", "Kinh tế", "Đọc JSON bag/box/equipped an toàn; ghi inventory bị chặn để tránh desync", "operator"],
+  ["inventory", "Túi đồ", "Kinh tế", "Chỉnh bag/box/equipped/fashion offline với validator, snapshot và audit", "operator"],
   ["currency", "Tiền tệ", "Kinh tế", "Lượng, coin, xu, yên với transaction và xác nhận", "operator"],
   ["rewards", "Phần thưởng", "Kinh tế", "Gift code, reward delivery và theo dõi lịch sử", "operator"],
   ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
@@ -187,6 +188,16 @@ async function ensureSchema() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX panel_alerts_key_status_idx (alert_key, status),
       INDEX panel_alerts_status_created_idx (status, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_player_snapshots (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      player_id INT NOT NULL,
+      snapshot_type ENUM('stats','inventory') NOT NULL,
+      before_state JSON NOT NULL,
+      after_state JSON NOT NULL,
+      created_by INT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX panel_player_snapshots_player_created_idx (player_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS panel_maintenance_windows (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -384,8 +395,21 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/items") {
     if (!requireUser(user, res, "analyst")) return;
     const q = `%${String(url.searchParams.get("q") || "").slice(0, 60)}%`;
-    const [rows] = await pool.query("SELECT id, name, type, gender, description, level, icon, part, fashion, isUpToUp FROM item WHERE name LIKE ? OR CAST(id AS CHAR) LIKE ? ORDER BY id LIMIT 100", [q, q]);
-    writeJson(res, 200, { rows }); return;
+    const rawType = url.searchParams.get("type");
+    const rawGender = url.searchParams.get("gender");
+    const type = rawType === null || rawType === "" || rawType === "all" ? null : Number(rawType);
+    const gender = rawGender === null || rawGender === "" || rawGender === "all" ? null : Number(rawGender);
+    if (type !== null && (!Number.isInteger(type) || type < 0 || type > 255)) throw new Error("Bộ lọc type không hợp lệ.");
+    if (gender !== null && (!Number.isInteger(gender) || ![-1, 0, 1, 2].includes(gender))) throw new Error("Bộ lọc gender không hợp lệ.");
+    const conditions = ["(name LIKE ? OR CAST(id AS CHAR) LIKE ?)"];
+    const params = [q, q];
+    if (type !== null) { conditions.push("type = ?"); params.push(type); }
+    if (gender !== null) { conditions.push("gender = ?"); params.push(gender); }
+    const [rows, types] = await Promise.all([
+      pool.query(`SELECT id, name, type, gender, description, level, icon, part, fashion, isUpToUp FROM item WHERE ${conditions.join(" AND ")} ORDER BY type, level, id LIMIT 100`, params),
+      pool.query("SELECT type, COUNT(*) AS total FROM item GROUP BY type ORDER BY type"),
+    ]);
+    writeJson(res, 200, { rows: rows[0], types: types[0], filters: { type, gender } }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/accounts") {
     if (!requireUser(user, res, "moderator")) return;
@@ -405,6 +429,16 @@ async function api(req, res, url) {
       [playerId],
     );
     writeJson(res, 200, { row: rows[0] || null }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/player-state") {
+    if (!requireUser(user, res, "analyst")) return;
+    const playerId = Number(url.searchParams.get("playerId"));
+    if (!Number.isInteger(playerId) || playerId < 1) throw new Error("playerId không hợp lệ.");
+    const columns = await tableColumns("players");
+    const selected = availableColumns(columns, ["id", "user_id", "name", "online", "point", "spoint", "potential", "numberCellBag", "numberCellBox", "bag", "box", "equiped", "fashion"]);
+    if (!selected.includes("id") || !selected.includes("online")) throw new Error("Schema players không đủ id/online để chỉnh dữ liệu an toàn.");
+    const [rows] = await pool.query(`SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1`, [playerId]);
+    writeJson(res, 200, { row: rows[0] || null, editableStats: ["point", "spoint", "potential", "numberCellBag", "numberCellBox"].filter(column => columns.has(column)).concat(columns.has("data") ? ["exp"] : []), inventoryEditable: ["bag", "box", "equiped", "fashion"].every(column => columns.has(column)) }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/shop") {
     if (!requireUser(user, res, "analyst")) return;
@@ -580,6 +614,82 @@ async function api(req, res, url) {
       await conn.commit();
       await audit(user, "currency", "currency.adjusted", table === "users" ? "user" : "player", String(id), "success", { currency, amount, before: before[0].value });
       writeJson(res, 200, { ok: true });
+    } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/player-stats-update") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const playerId = Number(body.playerId);
+    if (!Number.isInteger(playerId) || playerId < 1 || body.confirmation !== `APPLY PLAYER STATS ${playerId}`) throw new Error("Player hoặc mã xác nhận không hợp lệ.");
+    const columns = await tableColumns("players");
+    const editable = availableColumns(columns, ["id", "online", "data", "point", "spoint", "potential", "numberCellBag", "numberCellBox"]);
+    if (!editable.includes("online")) throw new Error("Schema không có cột online để chặn chỉnh live.");
+    const patch = validatePlayerStats(body.stats || {}, columns);
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query(`SELECT ${editable.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1 FOR UPDATE`, [playerId]);
+      const before = rows[0];
+      if (!before) throw new Error("Không tìm thấy nhân vật.");
+      if (Number(before.online) !== 0) throw new Error("Nhân vật đang online. Hãy yêu cầu người chơi thoát game hoàn toàn trước khi chỉnh chỉ số.");
+      const changes = Object.entries(patch).map(([field, value]) => [field, Array.isArray(value) ? JSON.stringify(value) : value]);
+      const expIndex = changes.findIndex(([field]) => field === "exp");
+      if (expIndex >= 0) {
+        let data;
+        try { data = JSON.parse(before.data || "{}"); } catch { throw new Error("players.data hiện không phải JSON hợp lệ; không thể chỉnh EXP an toàn."); }
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("players.data không có object JSON hợp lệ.");
+        data.exp = changes[expIndex][1];
+        changes[expIndex] = ["data", JSON.stringify(data)];
+      }
+      await conn.query(`UPDATE players SET ${changes.map(([field]) => `\`${field}\` = ?`).join(", ")} WHERE id = ? LIMIT 1`, [...changes.map(([, value]) => value), playerId]);
+      const after = { ...before, ...Object.fromEntries(changes) };
+      const snapshotId = randomUUID();
+      await conn.query("INSERT INTO panel_player_snapshots (id, player_id, snapshot_type, before_state, after_state, created_by) VALUES (?, ?, 'stats', ?, ?, ?)", [snapshotId, playerId, JSON.stringify(before), JSON.stringify(after), user.id]);
+      await conn.commit();
+      await audit(user, "players", "player.stats.updated", "player", String(playerId), "success", { fields: Object.keys(patch), snapshotId, offlineRequired: true });
+      writeJson(res, 200, { ok: true, snapshotId, reloadRequired: true });
+    } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/player-inventory-update") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const playerId = Number(body.playerId);
+    if (!Number.isInteger(playerId) || playerId < 1 || body.confirmation !== `APPLY INVENTORY ${playerId}`) throw new Error("Player hoặc mã xác nhận inventory không hợp lệ.");
+    const columns = await tableColumns("players");
+    const selected = availableColumns(columns, ["id", "online", "numberCellBag", "numberCellBox", "bag", "box", "equiped", "fashion"]);
+    if (!["id", "online", "bag", "box", "equiped", "fashion"].every(column => selected.includes(column))) throw new Error("Schema players không đủ cột hành trang để chỉnh an toàn.");
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query(`SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1 FOR UPDATE`, [playerId]);
+      const before = rows[0];
+      if (!before) throw new Error("Không tìm thấy nhân vật.");
+      if (Number(before.online) !== 0) throw new Error("Nhân vật đang online. Hãy yêu cầu người chơi thoát game hoàn toàn trước khi chỉnh hành trang.");
+      const { payload, itemIds } = validateInventory(body.inventory || {}, { bag: before.numberCellBag, box: before.numberCellBox });
+      const oldIds = existingItemIds({ bag: before.bag, box: before.box, equiped: before.equiped, fashion: before.fashion });
+      const ids = [...itemIds];
+      if (ids.length > 1_000) throw new Error("Inventory chứa quá nhiều template item.");
+      const [knownRows] = ids.length ? await conn.query(`SELECT id, type FROM item WHERE id IN (${ids.map(() => "?").join(",")})`, ids) : [[]];
+      const known = new Set(knownRows.map(row => Number(row.id)));
+      const missing = ids.filter(id => !known.has(id) && !oldIds.has(id));
+      if (missing.length) throw new Error(`Item template không tồn tại trong catalog: ${missing.slice(0, 10).join(", ")}.`);
+      const typeById = new Map(knownRows.map(row => [Number(row.id), Number(row.type)]));
+      for (const section of ["equiped", "fashion"]) {
+        const occupiedTypes = new Set();
+        for (const entry of JSON.parse(payload[section])) {
+          const itemType = typeById.get(Number(entry.id));
+          if (!Number.isInteger(itemType) || itemType < 0 || itemType > 15) throw new Error(`${section} chỉ nhận item equipment có type 0-15 còn tồn tại trong catalog.`);
+          if (occupiedTypes.has(itemType)) throw new Error(`${section} có hai item cùng equipment type ${itemType}.`);
+          occupiedTypes.add(itemType);
+        }
+      }
+      await conn.query("UPDATE players SET bag = ?, box = ?, equiped = ?, fashion = ? WHERE id = ? LIMIT 1", [payload.bag, payload.box, payload.equiped, payload.fashion, playerId]);
+      const snapshotId = randomUUID();
+      const after = { bag: payload.bag, box: payload.box, equiped: payload.equiped, fashion: payload.fashion };
+      await conn.query("INSERT INTO panel_player_snapshots (id, player_id, snapshot_type, before_state, after_state, created_by) VALUES (?, ?, 'inventory', ?, ?, ?)", [snapshotId, playerId, JSON.stringify({ bag: before.bag, box: before.box, equiped: before.equiped, fashion: before.fashion }), JSON.stringify(after), user.id]);
+      await conn.commit();
+      await audit(user, "inventory", "player.inventory.updated", "player", String(playerId), "success", { snapshotId, sections: Object.fromEntries(Object.entries(payload).map(([section, raw]) => [section, JSON.parse(raw).length])), offlineRequired: true });
+      writeJson(res, 200, { ok: true, snapshotId, reloadRequired: true });
     } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
     return;
   }
