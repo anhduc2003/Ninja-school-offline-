@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.1.6}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.1.7}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
@@ -77,6 +77,19 @@ printf '%s\n' "${RELEASE_VERSION}" > "${INSTALL_DIR}/.termux/release-installed"
 cd "${INSTALL_DIR}"
 chmod +x run-server.sh scripts/*.sh admin-panel/*.sh
 mkdir -p .termux logs
+
+printf '%s\n' '[2b/6] Chuẩn bị metadata Git cho đồng bộ khi khởi động...'
+if git init -q && git remote add origin "https://github.com/${RELEASE_REPO}.git" 2>/dev/null; then
+  if git fetch --quiet --depth=1 origin main && git reset --hard -q FETCH_HEAD; then
+    printf '%s\n' 'Đã bật đồng bộ GitHub an toàn khi khởi động server.'
+  else
+    rm -rf .git
+    printf '%s\n' 'Không thể lấy metadata GitHub lúc cài; giữ source Release hiện tại. Lần start sau sẽ thử lại.' >&2
+  fi
+else
+  rm -rf .git
+  printf '%s\n' 'Không thể khởi tạo metadata Git; bản cài vẫn chạy từ Release hiện tại.' >&2
+fi
 
 printf '%s\n' '[3/6] Tạo cấu hình server nếu chưa có...'
 if [ ! -f config.properties ]; then

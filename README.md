@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.6/install-v1.1.6.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.7/install-v1.1.7.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.6/install-v1.1.6.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.1.7/install-v1.1.7.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
@@ -89,7 +89,17 @@ Nếu đang đứng trong thư mục dự án, có thể dùng:
 bash run-server.sh
 ```
 
-Launcher sẽ tự kiểm tra MariaDB, build JAR nếu chưa có, rồi chạy server ở chế độ **headless** để không tạo cửa sổ Swing. Nó cũng khởi động Ninja Control Room và scheduler local. Log game nằm tại `~/Ninja-school-offline-/logs/server.log`, log panel nằm tại `~/Ninja-school-offline-/logs/admin-panel.log`, và PID game nằm tại `~/Ninja-school-offline-/.termux/server.pid`.
+Launcher sẽ tự kiểm tra MariaDB, build JAR nếu chưa có, rồi chạy server ở chế độ **headless** để không tạo cửa sổ Swing. Nó cũng khởi động Ninja Control Room và scheduler local. MariaDB được kiểm tra qua socket trước; nếu instance cũ không healthy, launcher dừng instance đó có kiểm tra PID rồi mới tạo instance mới. Điều này ngăn lỗi Aria/InnoDB lock do chạy hai MariaDB cùng datadir. Log game nằm tại `~/Ninja-school-offline-/logs/server.log`, log panel nằm tại `~/Ninja-school-offline-/logs/admin-panel.log`, log MariaDB nằm tại `~/Ninja-school-offline-/logs/mariadb.log`, và PID game nằm tại `~/Ninja-school-offline-/.termux/server.pid`.
+
+### Đồng bộ source GitHub lúc khởi động
+
+Mỗi lần chạy `run-server.sh`, launcher kiểm tra `origin/main` trước khi MariaDB/JVM khởi động. Khi source local sạch và commit hiện tại có thể **fast-forward** đến GitHub, launcher tự đồng bộ source, xóa JAR cũ để Maven build lại và làm mới marker dependency panel. Database MariaDB, `config.properties`, cấu hình/session panel, backup và logs là dữ liệu local bị ignore nên không bị Git ghi đè.
+
+Nếu GitHub không kết nối được, có thay đổi source local chưa commit, history diverged hoặc game server đang chạy, launcher ghi lý do vào `logs/sync.log` rồi dùng source local hiện có — không `reset`, không xóa database và không tự merge. Có thể tắt kiểm tra cập nhật cho một lần chạy:
+
+```bash
+NSO_AUTO_SYNC=0 bash ~/Ninja-school-offline-/run-server.sh
+```
 
 Theo dõi log:
 

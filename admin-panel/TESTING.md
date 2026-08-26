@@ -26,6 +26,8 @@ Bootstrap password resolver unit coverage confirms that a new panel uses the req
 
 An isolated bootstrap E2E test backed up the fixture `panel_admin_users` and sessions, removed all fixture admin rows, started the panel, confirmed `admin-panel/data/first-login.txt` contained `Username: admin` and `Password: 1`, then authenticated successfully with `admin`/`1`. The script stopped the panel and restored the original fixture admin/session state and first-login file afterward.
 
+The Termux launcher scripts pass Bash syntax checks. A local Git E2E simulated a remote fast-forward and confirmed the startup sync updated source while preserving ignored `config.properties`; it then introduced an uncommitted source change and confirmed the sync refused to overwrite it. A shallow-clone simulation also verified the fast-forward ancestry check remains valid after fetching a newer remote commit. MariaDB lifecycle behavior is validated by script review and Bash syntax in this Linux fixture; no claim is made that the Android process/Aria lock behavior was executed on the user’s device.
+
 ## Automated checks
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.

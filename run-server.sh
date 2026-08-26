@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+bash "${ROOT_DIR}/scripts/sync-source.sh"
+
 if [ ! -f "${ROOT_DIR}/config.properties" ]; then
   cp "${ROOT_DIR}/config.properties.example" "${ROOT_DIR}/config.properties"
   printf '%s\n' 'Đã tạo config.properties từ file mẫu. Hãy kiểm tra cấu hình database rồi chạy lại.'
