@@ -28,6 +28,10 @@ Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong t
 
 Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java, không public MariaDB và không mô phỏng lệnh runtime không có contract SQL.
 
+## Icon vật phẩm
+
+Panel hiển thị thumbnail từ chính sprite game `Data/Img/Small/1/Small{item.icon}.png`, cùng quy tắc filename Java dùng khi client yêu cầu icon. Thumbnail hiện ở catalog item, picker hành trang, item đang mang, tìm/đang chọn Shop NPC và kết quả/reward Gift Code. Endpoint local-only chỉ nhận số icon hợp lệ, chỉ đọc zoom `1`–`4` trong thư mục sprite allowlist và trả fallback ID khi file icon thiếu; browser không thể đọc file tùy ý ngoài asset game.
+
 ## Shop NPC trực quan
 
 Mở **Cửa hàng** rồi chọn store NPC. Danh sách bên phải chỉ hiển thị hàng hóa của store đang chọn; dùng ô tìm để lọc theo tên hoặc ID item. Khi thêm/sửa hàng, bấm **Tìm/chọn item**, chọn loại tiền và giá, rồi cấu hình khóa, hệ, hạn dùng và option chỉ số bằng từng dòng. Không cần nhập `itemId`, `expire` mili-giây hay `Options JSON` thủ công.

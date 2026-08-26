@@ -19,6 +19,7 @@ const GAME_CONFIG_PATH = join(ROOT_DIR, "config.properties");
 const DATA_DIR = join(__dirname, "data");
 const BACKUP_DIR = join(__dirname, "backups");
 const PUBLIC_DIR = join(__dirname, "public");
+const ITEM_SPRITE_DIR = resolve(ROOT_DIR, "Data", "Img", "Small");
 const CONFIG_PATH = join(__dirname, "config.local.json");
 const FIRST_LOGIN_PATH = join(DATA_DIR, "first-login.txt");
 const MAX_BODY_SIZE = 1_000_000;
@@ -436,6 +437,26 @@ function requireUser(user, res, role = "viewer") {
   return true;
 }
 
+async function sendItemIcon(res, url) {
+  const rawZoom = url.searchParams.get("zoom");
+  const zoom = rawZoom === null ? 1 : Number(rawZoom);
+  if (!Number.isInteger(zoom) || zoom < 1 || zoom > 4) { res.writeHead(400, { "Cache-Control": "no-store" }); res.end(); return; }
+  const rawIcon = url.searchParams.get("icon");
+  const rawItemId = url.searchParams.get("itemId");
+  let icon = rawIcon === null ? null : Number(rawIcon);
+  if (rawItemId !== null) {
+    const itemId = Number(rawItemId);
+    if (!Number.isInteger(itemId) || itemId < 0) { res.writeHead(400, { "Cache-Control": "no-store" }); res.end(); return; }
+    const [rows] = await pool.query("SELECT icon FROM item WHERE id = ? LIMIT 1", [itemId]);
+    icon = Number(rows[0]?.icon);
+  }
+  if (!Number.isInteger(icon) || icon < 0 || icon > 100_000) { res.writeHead(404, { "Cache-Control": "public, max-age=300" }); res.end(); return; }
+  const file = resolve(ITEM_SPRITE_DIR, String(zoom), `Small${icon}.png`);
+  if (!file.startsWith(`${ITEM_SPRITE_DIR}/`) || !existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404, { "Cache-Control": "public, max-age=300" }); res.end(); return; }
+  res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" });
+  createReadStream(file).pipe(res);
+}
+
 async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/system/health") {
     let dbOnline = false; let dbError = null;
@@ -443,6 +464,7 @@ async function api(req, res, url) {
     writeJson(res, 200, { ok: true, service: "nso-offline-panel", access: "local-only-no-login", databaseOnline: dbOnline, database: dbOnline ? config.database.name : null, dbError, bindHost: LOCAL_BIND_HOST, port: config.port }); return;
   }
   const user = await getSessionUser(req);
+  if (req.method === "GET" && url.pathname === "/api/item-icon") { await sendItemIcon(res, url); return; }
   if (req.method === "GET" && url.pathname === "/api/local/context") {
     writeJson(res, 200, { access: "local-only-no-login", actor: user.username, csrf: LOCAL_CSRF_TOKEN }); return;
   }
@@ -516,14 +538,14 @@ async function api(req, res, url) {
     if (!selected.includes("id") || !selected.includes("online")) throw new Error("Schema players không đủ id/online để chỉnh dữ liệu an toàn.");
     const [[rows], [inventoryCatalog], [optionCatalog]] = await Promise.all([
       pool.query(`SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1`, [playerId]),
-      pool.query("SELECT id, name, type, gender, level FROM item ORDER BY id LIMIT 200"),
+      pool.query("SELECT id, name, type, gender, level, icon FROM item ORDER BY id LIMIT 200"),
       pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
     ]);
     writeJson(res, 200, { row: rows[0] || null, editableStats: ["point", "spoint", "potential", "numberCellBag", "numberCellBox"].filter(column => columns.has(column)).concat(columns.has("data") ? ["exp"] : []), inventoryEditable: ["bag", "box", "equiped", "fashion"].every(column => columns.has(column)), inventoryCatalog, optionCatalog }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/shop") {
     if (!requireUser(user, res, "analyst")) return;
-    const [rows] = await pool.query("SELECT s.id, s.idItem, i.name AS itemName, s.price, s.upgrade, s.system, s.options FROM shopcoin_tb1 s LEFT JOIN item i ON i.id = s.idItem ORDER BY s.id LIMIT 200");
+    const [rows] = await pool.query("SELECT s.id, s.idItem, i.name AS itemName, i.icon AS itemIcon, s.price, s.upgrade, s.system, s.options FROM shopcoin_tb1 s LEFT JOIN item i ON i.id = s.idItem ORDER BY s.id LIMIT 200");
     writeJson(res, 200, { rows }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/npc-shops") {
@@ -534,7 +556,7 @@ async function api(req, res, url) {
     const [stores, npcs, rows, optionCatalog] = await Promise.all([
       pool.query("SELECT id, name FROM stores ORDER BY id"),
       pool.query("SELECT id, name, head, body, leg, menu FROM npc ORDER BY id LIMIT 150"),
-      pool.query(`SELECT sd.id, sd.item_id, i.name AS item_name, sd.sys, sd.store, st.name AS store_name, sd.\`lock\`, sd.coin, sd.gold, sd.yen, sd.expire, sd.options FROM store_data sd JOIN stores st ON st.id = sd.store LEFT JOIN item i ON i.id = sd.item_id ${storeId === null ? "" : "WHERE sd.store = ?"} ORDER BY sd.store, sd.id LIMIT 400`, storeId === null ? [] : [storeId]),
+      pool.query(`SELECT sd.id, sd.item_id, i.name AS item_name, i.icon AS item_icon, sd.sys, sd.store, st.name AS store_name, sd.\`lock\`, sd.coin, sd.gold, sd.yen, sd.expire, sd.options FROM store_data sd JOIN stores st ON st.id = sd.store LEFT JOIN item i ON i.id = sd.item_id ${storeId === null ? "" : "WHERE sd.store = ?"} ORDER BY sd.store, sd.id LIMIT 400`, storeId === null ? [] : [storeId]),
       pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
     ]);
     writeJson(res, 200, { stores: stores[0], npcs: npcs[0], rows: rows[0], optionCatalog: optionCatalog[0], reloadRequired: true }); return;
@@ -559,7 +581,7 @@ async function api(req, res, url) {
     const columns = await tableColumns("item");
     if (!columns.has("id") || !columns.has("name")) throw new Error("Schema item thiếu cột id/name.");
     const q = String(url.searchParams.get("q") || "").trim().slice(0, 80);
-    const select = ["id", "name", ...(columns.has("type") ? ["type"] : [])];
+    const select = ["id", "name", ...(columns.has("type") ? ["type"] : []), ...(columns.has("icon") ? ["icon"] : [])];
     const [rows] = q ? await pool.query(`SELECT ${select.join(", ")} FROM item WHERE CAST(id AS CHAR) LIKE ? OR name LIKE ? ORDER BY id LIMIT 50`, [`%${q}%`, `%${q}%`]) : await pool.query(`SELECT ${select.join(", ")} FROM item ORDER BY id LIMIT 50`);
     writeJson(res, 200, { rows }); return;
   }
