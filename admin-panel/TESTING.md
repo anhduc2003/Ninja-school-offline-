@@ -24,6 +24,8 @@ The player editor rendered the allowlisted point, skill point, EXP, slot and pot
 
 Bootstrap password resolver unit coverage confirms that a new panel uses the requested default password `1` only when `NSO_PANEL_ADMIN_PASSWORD` is absent; an explicit local environment override remains supported. Existing admin rows are not modified by bootstrap.
 
+An isolated bootstrap E2E test backed up the fixture `panel_admin_users` and sessions, removed all fixture admin rows, started the panel, confirmed `admin-panel/data/first-login.txt` contained `Username: admin` and `Password: 1`, then authenticated successfully with `admin`/`1`. The script stopped the panel and restored the original fixture admin/session state and first-login file afterward.
+
 ## Automated checks
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.
