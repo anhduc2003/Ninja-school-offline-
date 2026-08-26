@@ -10,7 +10,7 @@ Trên Termux/Linux, sau khi MariaDB đang chạy:
 bash admin-panel/start-panel.sh
 ```
 
-Launcher dùng lock chống gọi trùng, cài dependency đúng theo `package-lock.json`, dọn PID stale, rồi chỉ báo thành công sau khi endpoint local `http://127.0.0.1:18080/api/system/health` phản hồi. Lần đầu, nếu chưa có `admin-panel/config.local.json`, panel lấy các khóa `db.*` từ `config.properties` của game để tạo cấu hình local. Các lần sau không tự ghi đè file local đó.
+Launcher dùng lock chống gọi trùng, cài dependency đúng theo `package-lock.json`, dọn PID stale, rồi chỉ báo thành công sau khi endpoint local `http://127.0.0.1:18080/api/system/health` phản hồi. Lần đầu, nếu chưa có `admin-panel/config.local.json`, panel lấy các khóa `db.*` từ `config.properties` của game để tạo cấu hình local. Các lần sau không tự ghi đè file local đó. Khi database chưa có admin panel, panel tạo user **`admin`** với mật khẩu bootstrap **`1`**, đồng thời ghi lại ở `admin-panel/data/first-login.txt`.
 
 Trên Windows:
 
@@ -18,13 +18,15 @@ Trên Windows:
 admin-panel\run-panel-stack.cmd
 ```
 
-Lệnh Windows cài dependency production nếu cần, kiểm tra health endpoint rồi khởi động panel và scheduler local. Truy cập bằng trình duyệt cùng máy tại `http://127.0.0.1:18080`; health local là `http://127.0.0.1:18080/api/system/health`. Lần chạy đầu tạo user `admin` và ghi mật khẩu tạm thời vào `admin-panel/data/first-login.txt` với quyền file hạn chế. Đổi mật khẩu trước khi dùng panel cho vận hành thực tế.
+Lệnh Windows cài dependency production nếu cần, kiểm tra health endpoint rồi khởi động panel và scheduler local. Truy cập bằng trình duyệt cùng máy tại `http://127.0.0.1:18080`; health local là `http://127.0.0.1:18080/api/system/health`. Lần chạy đầu tạo user `admin` với mật khẩu bootstrap **`1`** và ghi lại tại `admin-panel/data/first-login.txt` với quyền file hạn chế. Đây là mật khẩu rất yếu: đăng nhập xong, vào **Bảo mật tài khoản** để đổi mật khẩu ngay trước khi mở panel cho bất kỳ mạng LAN nào.
+
+Mật khẩu bootstrap chỉ áp dụng khi bảng `panel_admin_users` **chưa có admin**; bản nâng cấp không tự ghi đè mật khẩu admin đang tồn tại. Nếu cần đặt một mật khẩu khác lúc khởi tạo, khởi động lần đầu với biến môi trường `NSO_PANEL_ADMIN_PASSWORD`. Không xóa bảng admin chỉ để trở về mật khẩu `1` trên server đang vận hành.
 
 ## An toàn vận hành
 
 Panel dùng session HttpOnly, SameSite=Strict, CSRF token, role-based access control và audit SQL append-only. Mọi write hiện có đều dùng parameterized query, allowlist cột/bảng và confirmation phrase. Các thay đổi item/shop/monster có thể cần reload cache hoặc restart Java server vì game giữ một phần dữ liệu trong bộ nhớ. Mật khẩu được đổi trong mô-đun **Bảo mật tài khoản**; thao tác đó thu hồi toàn bộ session của user hiện tại.
 
-Các view vận hành có dữ liệu thật gồm dashboard/health, người chơi, inventory JSON **chỉ đọc**, account status và ban, tiền tệ, item/shop/boss, gift code và lịch sử redemption, event points **chỉ đọc**, option rate/notify, leaderboard, analytics, incident/audit, backup, maintenance runbook và scheduler local. Vì lifecycle sự kiện, thông báo broadcast và nhiều cache nằm trong bộ nhớ Java, panel không giả vờ áp dụng các tác vụ đó live chỉ bằng SQL; các màn hình tương ứng nêu rõ khi cần restart/reload hoặc runbook thủ công.
+Các view vận hành có dữ liệu thật gồm dashboard/health, người chơi, inventory JSON `bag/box/equiped/fashion` có chỉnh sửa offline với snapshot/audit, account status và ban, tiền tệ, item/shop/boss, gift code và lịch sử redemption, event points **chỉ đọc**, option rate/notify, leaderboard, analytics, incident/audit, backup, maintenance runbook và scheduler local. Vì lifecycle sự kiện, thông báo broadcast và nhiều cache nằm trong bộ nhớ Java, panel không giả vờ áp dụng các tác vụ đó live chỉ bằng SQL; các màn hình tương ứng nêu rõ khi cần restart/reload hoặc runbook thủ công.
 
 ## Tạo account, vật phẩm và shop NPC
 

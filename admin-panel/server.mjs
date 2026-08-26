@@ -10,6 +10,7 @@ import { hashPassword, hasRole, randomToken, tokenHash, verifyPassword } from ".
 import { availableColumns } from "./lib/schema.mjs";
 import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 import { existingItemIds, validateInventory, validatePlayerStats } from "./lib/player-state.mjs";
+import { resolveBootstrapPassword } from "./lib/bootstrap-password.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -216,9 +217,9 @@ async function ensureSchema() {
   for (const statement of statements) await pool.query(statement);
   const [admins] = await pool.query("SELECT id FROM panel_admin_users WHERE role = 'admin' LIMIT 1");
   if (admins.length === 0) {
-    const password = process.env.NSO_PANEL_ADMIN_PASSWORD || randomToken(15);
+    const password = resolveBootstrapPassword(process.env.NSO_PANEL_ADMIN_PASSWORD);
     await pool.query("INSERT INTO panel_admin_users (username, password_hash, role) VALUES (?, ?, 'admin')", ["admin", hashPassword(password)]);
-    writeFileSync(FIRST_LOGIN_PATH, `Ninja School Offline panel\nUsername: admin\nPassword: ${password}\n\nĐổi mật khẩu sau lần đăng nhập đầu tiên.\n`, { mode: 0o600 });
+    writeFileSync(FIRST_LOGIN_PATH, `Ninja School Offline panel\nUsername: admin\nPassword: ${password}\n\nCẢNH BÁO: Mật khẩu bootstrap mặc định rất yếu. Đổi mật khẩu ngay sau lần đăng nhập đầu tiên.\n`, { mode: 0o600 });
     console.log(`Panel admin bootstrap created. Credentials saved to ${FIRST_LOGIN_PATH}`);
   }
 }
