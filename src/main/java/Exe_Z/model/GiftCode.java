@@ -1,14 +1,12 @@
 /*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
+ * Gift Code runtime lifecycle: redemption eligibility is decided by the game
+ * server, not by the web panel or a background scheduler.
  */
 package Exe_Z.model;
 
 import Exe_Z.constants.SQLStatement;
 import Exe_Z.db.jdbc.DbManager;
 import Exe_Z.item.Item;
-import Exe_Z.lib.ZConnection;
 import Exe_Z.server.Config;
 import Exe_Z.util.NinjaUtils;
 import java.sql.Connection;
@@ -22,10 +20,6 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
-/**
- *
- * @author kitakeyos - Hoàng Hữu Dũng
- */
 public class GiftCode {
 
     private static final GiftCode instance = new GiftCode();
@@ -35,140 +29,157 @@ public class GiftCode {
     }
 
     public void use(Char player, String code) {
-        try {
-            int lent = code.length();
-            if (code.equals("") || lent < 3 || lent > 30) {
+        List<Item> rewards = new ArrayList<>();
+        int gold = 0;
+        int yen = 0;
+        int coin = 0;
+        try (Connection connection = DbManager.getInstance().getConnection()) {
+            int length = code.length();
+            if (code.equals("") || length < 3 || length > 30) {
                 player.getService().serverDialog("Mã quà tặng có chiều dài từ 3 đến 30 ký tự.");
                 return;
             }
 
-            PreparedStatement stmt = DbManager.getInstance().getConnection(DbManager.GIFT_CODE).prepareStatement(
-                    SQLStatement.GET_GIFT_CODE, ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
-            stmt.setString(1, code);
-            stmt.setInt(2, Config.getInstance().getServerID());
-            ResultSet res = stmt.executeQuery();
+            connection.setAutoCommit(false);
             try {
-                if (!res.first()) {
-                    player.getService().serverDialog("Mã quà tặng không tồn tại hoặc đã hết hạn.");
-                    return;
-                }
+                try (PreparedStatement statement = connection.prepareStatement(SQLStatement.GET_GIFT_CODE)) {
+                    statement.setString(1, code);
+                    statement.setInt(2, Config.getInstance().getServerID());
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (!result.next()) {
+                            player.getService().serverDialog("Mã quà tặng không tồn tại, chưa đến thời gian áp dụng, đã tắt hoặc đã hết hạn.");
+                            connection.rollback();
+                            return;
+                        }
 
-                int id = res.getInt("id");
-                byte status = res.getByte("status");
-                byte type = res.getByte("type");
-                byte serverId = res.getByte("server_id");
+                        int id = result.getInt("id");
+                        byte status = result.getByte("status");
+                        byte type = result.getByte("type");
+                        int maxRedemptions = result.getInt("max_redemptions");
+                        boolean hasMaxRedemptions = !result.wasNull();
+                        int redemptionCount = result.getInt("redemption_count");
+                        if (status == 1) {
+                            player.getService().serverDialog("Mã quà tặng đã được sử dụng.");
+                            connection.rollback();
+                            return;
+                        }
+                        if (hasMaxRedemptions && redemptionCount >= maxRedemptions) {
+                            player.getService().serverDialog("Mã quà tặng đã đạt giới hạn số lượt sử dụng.");
+                            connection.rollback();
+                            return;
+                        }
+                        if (type == 1 && isUsedGiftCode(connection, player, code)) {
+                            player.getService().serverDialog("Mỗi người chỉ được sử dụng 1 lần.");
+                            connection.rollback();
+                            return;
+                        }
+                        if (player.user.session.getCountUseGiftCode() >= 100) {
+                            player.getService().serverDialog("Mỗi ngày chỉ có thể nhập tối đa 100 mã quà tặng.");
+                            connection.rollback();
+                            return;
+                        }
 
-                if (status == 1) {
-                    player.getService().serverDialog("Mã quà tặng đã được sử dụng");
-                    return;
-                } else if (type == 1 && isUsedGiftCode(player, code)) {
-                    player.getService().serverDialog("Mỗi người chỉ được sử dụng 1 lần.");
-                    return;
-                } else if (player.user.session.getCountUseGiftCode() >= 100) {
-                    player.getService().serverDialog("Mỗi ngày chỉ có thể nhập tối đa 100 mã quà tặng.");
-                    return;
-                }
+                        gold = result.getInt("gold");
+                        yen = result.getInt("yen");
+                        coin = result.getInt("coin");
+                        JSONArray itemRows = (JSONArray) new JSONParser().parse(result.getString("items"));
+                        if (itemRows.size() > player.getSlotNull()) {
+                            player.getService().serverDialog("Bạn không đủ chỗ trống trong hành trang.");
+                            connection.rollback();
+                            return;
+                        }
+                        for (Object rawItem : itemRows) {
+                            JSONObject itemRow = (JSONObject) rawItem;
+                            Item item = new Item(itemRow);
+                            Object expireDaysRaw = itemRow.get("expire_days");
+                            if (expireDaysRaw != null) {
+                                int expireDays = Integer.parseInt(expireDaysRaw.toString());
+                                if (expireDays > 0) {
+                                    item.expire = System.currentTimeMillis() + expireDays * 86_400_000L;
+                                }
+                            }
+                            if (item.options.isEmpty()) {
+                                item.initOption();
+                            }
+                            rewards.add(item);
+                        }
 
-                int gold = res.getInt("gold");
-                int yen = res.getInt("yen");
-                int coin = res.getInt("coin");
-
-                JSONArray arrItem = (JSONArray) (new JSONParser().parse(res.getString("items")));
-
-                int size = arrItem.size();
-
-                if (size > player.getSlotNull()) {
-                    player.getService().serverDialog("Bạn không đủ chỗ trống trong hành trang.");
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                sb.append("Chúc mừng, bạn đã được tặng").append("\n\n");
-
-                if (gold > 0) {
-                    player.addGold(gold);
-                    sb.append(String.format("- %s lượng", NinjaUtils.getCurrency(gold))).append("\n");
-                }
-
-                if (yen > 0) {
-                    player.addYen(yen);
-                    sb.append(String.format("- %s yên", NinjaUtils.getCurrency(yen))).append("\n");
-                }
-
-                if (coin > 0) {
-                    player.addCoin(coin);
-                    sb.append(String.format("- %s xu", NinjaUtils.getCurrency(coin))).append("\n");
-                }
-
-                for (int i = 0; i < size; i++) {
-                    JSONObject itemObj = (JSONObject) arrItem.get(i);
-                    Item newItem = new Item(itemObj);
-
-                    if (newItem.options.isEmpty()) {
-                        newItem.initOption();
+                        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                        try (PreparedStatement used = connection.prepareStatement(SQLStatement.INSERT_USED_GIFT_CODE);
+                             PreparedStatement update = connection.prepareStatement(SQLStatement.UPDATE_GIFT_CODE)) {
+                            used.setInt(1, player.id);
+                            used.setInt(2, player.user.id);
+                            used.setString(3, code);
+                            used.setTimestamp(4, timestamp);
+                            used.executeUpdate();
+                            update.setTimestamp(1, timestamp);
+                            update.setInt(2, id);
+                            update.executeUpdate();
+                        }
                     }
-
-                    player.addItemToBag(newItem);
-                    sb.append(
-                            String.format("- x%s %s", NinjaUtils.getCurrency(newItem.getQuantity()), newItem.template.name))
-                            .append("\n");
                 }
-
-                player.user.session.addUseGiftCode();
-
-                player.getService().showAlert("Mã quà tặng", sb.toString());
-
-                addUsedGiftCode(player, code);
-                if (type == 0) {
-                    Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                    res.updateByte("status", (byte) 1);
-                    res.updateTimestamp("updated_at", timestamp);
-                    res.updateRow();
-                }
+                connection.commit();
+            } catch (Exception ex) {
+                connection.rollback();
+                throw ex;
             } finally {
-                res.close();
-                stmt.close();
+                connection.setAutoCommit(true);
             }
+
+            StringBuilder message = new StringBuilder("Chúc mừng, bạn đã được tặng\n\n");
+            if (gold > 0) {
+                player.addGold(gold);
+                message.append(String.format("- %s lượng", NinjaUtils.getCurrency(gold))).append("\n");
+            }
+            if (yen > 0) {
+                player.addYen(yen);
+                message.append(String.format("- %s yên", NinjaUtils.getCurrency(yen))).append("\n");
+            }
+            if (coin > 0) {
+                player.addCoin(coin);
+                message.append(String.format("- %s xu", NinjaUtils.getCurrency(coin))).append("\n");
+            }
+            for (Item item : rewards) {
+                player.addItemToBag(item);
+                message.append(String.format("- x%s %s", NinjaUtils.getCurrency(item.getQuantity()), item.template.name)).append("\n");
+            }
+            player.user.session.addUseGiftCode();
+            player.getService().showAlert("Mã quà tặng", message.toString());
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
     public boolean isUsedGiftCode(Char player, String giftCode) {
-        try {
-            PreparedStatement stmt = DbManager.getInstance().getConnection(DbManager.GIFT_CODE).prepareStatement(
-                    SQLStatement.CHECK_EXIST_USED_GIFT_CODE, ResultSet.TYPE_SCROLL_SENSITIVE,
-                    ResultSet.CONCUR_READ_ONLY);
-            stmt.setString(1, giftCode);
-            stmt.setInt(2, player.id);
-            stmt.setInt(3, player.user.id);
-            ResultSet res = stmt.executeQuery();
-            try {
-                if (res.first()) {
-                    return true;
-                }
-            } finally {
-                res.close();
-                stmt.close();
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
+        try (Connection connection = DbManager.getInstance().getConnection()) {
+            return isUsedGiftCode(connection, player, giftCode);
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            return false;
         }
-        return false;
+    }
+
+    private boolean isUsedGiftCode(Connection connection, Char player, String giftCode) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(SQLStatement.CHECK_EXIST_USED_GIFT_CODE)) {
+            statement.setString(1, giftCode);
+            statement.setInt(2, player.id);
+            statement.setInt(3, player.user.id);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
     }
 
     public void addUsedGiftCode(Char player, String giftCode) {
-        try {
-            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-            PreparedStatement stmt = DbManager.getInstance().getConnection(DbManager.GIFT_CODE).prepareStatement(SQLStatement.INSERT_USED_GIFT_CODE);
-            stmt.setInt(1, player.id);
-            stmt.setInt(2, player.user.id);
-            stmt.setString(3, giftCode);
-            stmt.setTimestamp(4, timestamp);
-            stmt.executeUpdate();
-            stmt.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
+        try (Connection connection = DbManager.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(SQLStatement.INSERT_USED_GIFT_CODE)) {
+            statement.setInt(1, player.id);
+            statement.setInt(2, player.user.id);
+            statement.setString(3, giftCode);
+            statement.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
+            statement.executeUpdate();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
         }
     }
-
 }

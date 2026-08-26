@@ -52,6 +52,31 @@ bash run-server.sh
 
 Event mới `Exe_Z.event.StarFestival` dùng event ID `9`, asset `item_roi/event_StarFestival/STAR_FESTIVAL.json` và cùng contract với event hiện có. Quái có thể rơi lồng đèn ngôi sao cùng các phần thưởng mặc định; người chơi đổi **10 lồng đèn ngôi sao** lấy **1 Huyền tinh ngọc**, đồng thời cộng điểm top `star_lantern`. Nó không thêm boss/map effect runtime mới, nên có thể bật bằng cơ chế pending apply mà không đòi hỏi hot-switch map.
 
+## Gift Code Control Center
+
+Gift Code Control Center quản lý mã, phạm vi server, tiền tệ, reward nhiều vật phẩm, option chỉ số, khóa item, upgrade, thời hạn reward, thời điểm bắt đầu/kết thúc, quota tổng, tắt/bật thủ công và lịch sử đổi. **Java là nguồn quyết định**: khi người chơi nhập code, server kiểm tra lifecycle và tăng bộ đếm trong transaction có row lock. Vì vậy code tự đến lịch hoặc hết hạn ngay cả khi panel đang tắt; không có scheduler hoặc thao tác hot-switch nào cần chạy nền.
+
+| Cơ chế | Hành vi runtime |
+|---|---|
+| `starts_at` | Từ chối code cho đến thời điểm bắt đầu. |
+| `expires_at` | Từ chối code sau thời điểm hết hạn. |
+| `disabled` | Tắt/bật code thủ công, không tái sử dụng cột `status` đã dành cho code toàn server đã tiêu thụ. |
+| `max_redemptions` | Chặn khi đạt tổng lượt đổi; `type=0` luôn có quota 1. |
+| `type=1` | Mỗi account chỉ đổi một lần, dựa trên `gift_code_histories`. |
+| `expire_days` reward | Được tính từ lúc người chơi đổi code, không phải từ lúc quản trị viên tạo code. |
+
+Với database đã tồn tại trước bản Gift Code lifecycle, chạy migration **một lần** bằng user MariaDB có quyền `ALTER` sau khi dừng Java game:
+
+```bash
+bash scripts/stop-server.sh
+bash scripts/migrate-gift-code-lifecycle.sh
+bash run-server.sh
+```
+
+Migration chỉ bổ sung `starts_at`, `max_redemptions`, `redemption_count`, `disabled` và index vào `gift_codes`; không xóa code, reward hoặc lịch sử đổi. Sau đó panel user quyền tối thiểu chỉ cần `SELECT, INSERT, UPDATE, DELETE`; không cần quyền ALTER ở các lần khởi động thường.
+
+Reward item được canonicalize trước khi lưu: item ID phải tồn tại trong bảng `item`, option có dạng `[[optionId,value]]` và option ID phải có trong `item_option`. Không thể sửa reward/lifecycle hay xóa code đã có redemption; hãy tắt code cũ và tạo code mới để audit/lịch sử đổi không bị sai lệch.
+
 ## Database với quyền tối thiểu
 
 Lần đầu có thể dùng credential MariaDB local hiện có để tạo các bảng `panel_*` vận hành. Sau đó nên dùng user riêng; thay `nsoz` nếu database game dùng tên khác:

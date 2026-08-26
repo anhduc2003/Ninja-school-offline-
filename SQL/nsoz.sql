@@ -658,6 +658,10 @@ CREATE TABLE `gift_codes` (
   `items` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `status` int(11) NOT NULL DEFAULT 0 COMMENT '0: Chưa nạp, 1: Đã nạp',
   `expires_at` timestamp NULL DEFAULT NULL,
+  `starts_at` timestamp NULL DEFAULT NULL,
+  `max_redemptions` int(10) UNSIGNED DEFAULT NULL COMMENT 'NULL: không giới hạn; type 0 vẫn chỉ đổi một lần toàn server',
+  `redemption_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `disabled` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;

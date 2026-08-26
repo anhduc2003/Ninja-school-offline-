@@ -104,6 +104,76 @@ async function validateEventDropItems(dropTable) {
   if (missing.length) throw new Error(`Item ID không tồn tại trong catalog: ${missing.join(", ")}.`);
 }
 
+const GIFT_LIFECYCLE_COLUMNS = ["starts_at", "max_redemptions", "redemption_count", "disabled"];
+
+async function giftLifecycleStatus() {
+  const columns = await tableColumns("gift_codes");
+  const missing = GIFT_LIFECYCLE_COLUMNS.filter(column => !columns.has(column));
+  return { ready: missing.length === 0, missing };
+}
+
+function parseGiftDate(value, label, required = false) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    if (required) throw new Error(`${label} là bắt buộc.`);
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} không hợp lệ.`);
+  return date;
+}
+
+async function normalizeGiftRewards(value) {
+  let input;
+  try { input = typeof value === "string" ? JSON.parse(value || "[]") : value; } catch { throw new Error("Reward items phải là JSON hợp lệ."); }
+  if (!Array.isArray(input) || input.length > 30) throw new Error("Reward items phải là mảng gồm 0 đến 30 vật phẩm.");
+  const ids = [...new Set(input.map(item => Number(item?.id)))];
+  if (ids.some(id => !Number.isInteger(id) || id < 0)) throw new Error("Mỗi reward item cần item ID nguyên không âm.");
+  if (ids.length === 0) return [];
+  const [itemRows, optionRows] = await Promise.all([
+    pool.query(`SELECT id, name, type, isUpToUp FROM item WHERE id IN (${ids.map(() => "?").join(",")})`, ids),
+    pool.query("SELECT id FROM item_option"),
+  ]);
+  const itemsById = new Map(itemRows[0].map(item => [Number(item.id), item]));
+  const optionIds = new Set(optionRows[0].map(option => Number(option.id)));
+  const missing = ids.filter(id => !itemsById.has(id));
+  if (missing.length) throw new Error(`Reward item ID không tồn tại: ${missing.join(", ")}.`);
+  return input.map((raw, index) => {
+    const item = itemsById.get(Number(raw.id));
+    const quantity = Number(raw.quantity ?? 1);
+    const sys = Number(raw.sys ?? 0);
+    const upgrade = Number(raw.upgrade ?? 0);
+    const yen = Number(raw.yen ?? 0);
+    const expireDays = Number(raw.expire_days ?? raw.expireDays ?? 0);
+    const isLock = raw.isLock !== false;
+    const options = raw.options ?? [];
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999 || !Number.isInteger(sys) || sys < 0 || sys > 9 || !Number.isInteger(upgrade) || upgrade < 0 || upgrade > 30 || !Number.isSafeInteger(yen) || yen < 0 || !Number.isInteger(expireDays) || expireDays < 0 || expireDays > 3650 || !Array.isArray(options) || options.length > 20) {
+      throw new Error(`Reward item dòng ${index + 1} có quantity, sys, upgrade, yên, hạn hoặc options không hợp lệ.`);
+    }
+    const normalizedOptions = options.map((option, optionIndex) => {
+      if (!Array.isArray(option) || option.length !== 2) throw new Error(`Option ${optionIndex + 1} của reward item dòng ${index + 1} phải là [optionId, value].`);
+      const optionId = Number(option[0]); const amount = Number(option[1]);
+      if (!Number.isInteger(optionId) || !optionIds.has(optionId) || !Number.isInteger(amount) || amount < -2_000_000_000 || amount > 2_000_000_000) throw new Error(`Option ${optionIndex + 1} của reward item dòng ${index + 1} không tồn tại hoặc giá trị vượt giới hạn.`);
+      return [optionId, amount];
+    });
+    return { id: item.id, quantity, isLock, yen, sys, upgrade, expire: -1, expire_days: expireDays, options: normalizedOptions, item_name: item.name, item_type: item.type };
+  });
+}
+
+async function giftControlData() {
+  const lifecycle = await giftLifecycleStatus();
+  if (!lifecycle.ready) return { migrationRequired: `Thiếu cột ${lifecycle.missing.join(", ")}. Chạy: bash scripts/migrate-gift-code-lifecycle.sh`, rows: [], history: [], summary: {} };
+  const [rows, history, summaryRows, options] = await Promise.all([
+    pool.query(`SELECT g.id, g.server_id, g.type, g.code, g.coin, g.gold, g.yen, g.items, g.status, g.disabled, g.starts_at, g.expires_at, g.max_redemptions, g.redemption_count, g.created_at, g.updated_at,
+      CASE WHEN g.disabled = 1 THEN 'disabled' WHEN g.status = 1 THEN 'consumed' WHEN g.starts_at IS NOT NULL AND g.starts_at > NOW() THEN 'scheduled' WHEN g.expires_at IS NOT NULL AND g.expires_at <= NOW() THEN 'expired' WHEN g.max_redemptions IS NOT NULL AND g.redemption_count >= g.max_redemptions THEN 'exhausted' ELSE 'active' END AS lifecycle,
+      COUNT(h.id) AS history_count
+      FROM gift_codes g LEFT JOIN gift_code_histories h ON h.gift_code = g.code GROUP BY g.id ORDER BY g.created_at DESC LIMIT 200`),
+    pool.query(`SELECT h.id, h.gift_code, h.created_at, h.updated_at, p.name AS player_name, u.username FROM gift_code_histories h LEFT JOIN players p ON p.id = h.player_id LEFT JOIN users u ON u.id = h.user_id ORDER BY h.created_at DESC LIMIT 200`),
+    pool.query(`SELECT COUNT(*) AS total_codes, SUM(disabled = 1) AS disabled_codes, SUM(status = 1) AS consumed_codes, SUM(starts_at IS NOT NULL AND starts_at > NOW()) AS scheduled_codes, SUM(expires_at IS NOT NULL AND expires_at <= NOW()) AS expired_codes, COALESCE(SUM(redemption_count), 0) AS total_redemptions FROM gift_codes`),
+    pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
+  ]);
+  return { rows: rows[0], history: history[0], summary: summaryRows[0][0] || {}, optionCatalog: options[0] };
+}
+
 function configFromGameProperties(template) {
   const game = readGameProperties();
   if (Object.keys(game).length === 0) return template;
@@ -449,6 +519,19 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/gift-codes") {
     if (!requireUser(user, res, "operator")) return;
     const [rows] = await pool.query("SELECT id, server_id, type, code, coin, gold, yen, items, status, expires_at, created_at FROM gift_codes ORDER BY created_at DESC LIMIT 100");
+    writeJson(res, 200, { rows }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/gift-code-control") {
+    if (!requireUser(user, res, "operator")) return;
+    writeJson(res, 200, await giftControlData()); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/gift-code-item-search") {
+    if (!requireUser(user, res, "operator")) return;
+    const columns = await tableColumns("item");
+    if (!columns.has("id") || !columns.has("name")) throw new Error("Schema item thiếu cột id/name.");
+    const q = String(url.searchParams.get("q") || "").trim().slice(0, 80);
+    const select = ["id", "name", ...(columns.has("type") ? ["type"] : [])];
+    const [rows] = q ? await pool.query(`SELECT ${select.join(", ")} FROM item WHERE CAST(id AS CHAR) LIKE ? OR name LIKE ? ORDER BY id LIMIT 50`, [`%${q}%`, `%${q}%`]) : await pool.query(`SELECT ${select.join(", ")} FROM item ORDER BY id LIMIT 50`);
     writeJson(res, 200, { rows }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/reward-history") {
@@ -808,18 +891,61 @@ async function api(req, res, url) {
     await audit(user, key === "notify" ? "notices" : "rates", "option.updated", "option", key, "success", { before: existing[0]?.value ?? null, after: value });
     writeJson(res, 200, { ok: true, reloadRequired: true }); return;
   }
-  if (req.method === "POST" && url.pathname === "/api/actions/gift-code-create") {
+  if (req.method === "POST" && url.pathname === "/api/actions/gift-code-save") {
     if (!requireUser(user, res, "operator")) return;
-    const body = await readJson(req); const code = String(body.code || "").trim().toUpperCase(); const coin = Number(body.coin || 0); const gold = Number(body.gold || 0); const yen = Number(body.yen || 0);
-    let items = "[]"; try { items = JSON.stringify(JSON.parse(body.items || "[]")); } catch { throw new Error("Items phải là JSON hợp lệ."); }
-    if (!/^[A-Z0-9_-]{4,48}$/.test(code) || ![coin, gold, yen].every(Number.isSafeInteger) || Math.min(coin, gold, yen) < 0 || body.confirmation !== `CREATE GIFT ${code}`) throw new Error("Gift code hoặc mã xác nhận không hợp lệ.");
+    const lifecycle = await giftLifecycleStatus();
+    if (!lifecycle.ready) throw new Error(`Gift Code lifecycle chưa migration. Chạy bash scripts/migrate-gift-code-lifecycle.sh (thiếu: ${lifecycle.missing.join(", ")}).`);
+    const body = await readJson(req);
+    const id = body.id === null || body.id === undefined || body.id === "" ? null : Number(body.id);
+    const code = String(body.code || "").trim().toUpperCase();
+    const serverId = Number(body.serverId ?? 1); const type = Number(body.type) === 1 ? 1 : 0;
+    const coin = Number(body.coin || 0); const gold = Number(body.gold || 0); const yen = Number(body.yen || 0);
+    const startsAt = parseGiftDate(body.startsAt, "Thời gian bắt đầu"); const expiresAt = parseGiftDate(body.expiresAt, "Thời gian hết hạn");
+    let maxRedemptions = body.maxRedemptions === null || body.maxRedemptions === undefined || String(body.maxRedemptions).trim() === "" || Number(body.maxRedemptions) === 0 ? null : Number(body.maxRedemptions);
+    if (!/^[A-Z0-9_-]{4,30}$/.test(code) || !Number.isInteger(serverId) || serverId < 0 || serverId > 127 || ![coin, gold, yen].every(Number.isSafeInteger) || Math.min(coin, gold, yen) < 0 || (maxRedemptions !== null && (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > 10_000_000)) || (startsAt && expiresAt && expiresAt <= startsAt)) throw new Error("Code, server, tiền tệ, quota hoặc khoảng thời gian không hợp lệ.");
+    if (type === 0) maxRedemptions = 1;
+    const rewards = await normalizeGiftRewards(body.items || "[]");
+    const items = JSON.stringify(rewards.map(({ item_name, item_type, ...item }) => item));
+    const confirmation = id ? `UPDATE GIFT ${id}` : `CREATE GIFT ${code}`;
+    if (body.confirmation !== confirmation) throw new Error("Mã xác nhận Gift Code không hợp lệ.");
+    if (id !== null) {
+      if (!Number.isInteger(id) || id < 1) throw new Error("Gift Code ID không hợp lệ.");
+      const [existing] = await pool.query("SELECT id, code, status, redemption_count FROM gift_codes WHERE id = ? LIMIT 1", [id]);
+      if (!existing[0]) throw new Error("Không tìm thấy Gift Code.");
+      if (Number(existing[0].status) === 1 || Number(existing[0].redemption_count) > 0) throw new Error("Không sửa reward/lifecycle của Gift Code đã có lượt đổi; hãy disable code cũ và tạo code mới.");
+      const [duplicate] = await pool.query("SELECT id FROM gift_codes WHERE code = ? AND id <> ? LIMIT 1", [code, id]);
+      if (duplicate[0]) throw new Error("Gift Code đã tồn tại.");
+      await pool.query("UPDATE gift_codes SET server_id=?, type=?, code=?, coin=?, gold=?, yen=?, items=?, starts_at=?, expires_at=?, max_redemptions=?, disabled=?, updated_at=NOW() WHERE id=? LIMIT 1", [serverId, type, code, coin, gold, yen, items, startsAt, expiresAt, maxRedemptions, body.disabled ? 1 : 0, id]);
+      await audit(user, "rewards", "gift_code.updated", "gift_code", String(id), "success", { code, type, serverId, startsAt, expiresAt, maxRedemptions, rewardCount: rewards.length });
+      writeJson(res, 200, { ok: true, id }); return;
+    }
     const [duplicate] = await pool.query("SELECT id FROM gift_codes WHERE code = ? LIMIT 1", [code]);
-    if (duplicate[0]) throw new Error("Gift code đã tồn tại.");
-    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
-    if (expiresAt && Number.isNaN(expiresAt.getTime())) throw new Error("Ngày hết hạn không hợp lệ.");
-    const [result] = await pool.query("INSERT INTO gift_codes (server_id, type, code, coin, gold, yen, items, status, expires_at, created_at) VALUES (1, ?, ?, ?, ?, ?, ?, 0, ?, NOW())", [Number(body.type) === 1 ? 1 : 0, code, coin, gold, yen, items, expiresAt]);
-    await audit(user, "rewards", "gift_code.created", "gift_code", String(result.insertId), "success", { code, coin, gold, yen, expiresAt });
+    if (duplicate[0]) throw new Error("Gift Code đã tồn tại.");
+    const [result] = await pool.query("INSERT INTO gift_codes (server_id, type, code, coin, gold, yen, items, status, disabled, starts_at, expires_at, max_redemptions, redemption_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, NOW())", [serverId, type, code, coin, gold, yen, items, body.disabled ? 1 : 0, startsAt, expiresAt, maxRedemptions]);
+    await audit(user, "rewards", "gift_code.created", "gift_code", String(result.insertId), "success", { code, type, serverId, startsAt, expiresAt, maxRedemptions, rewardCount: rewards.length });
     writeJson(res, 200, { ok: true, id: result.insertId }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/gift-code-state") {
+    if (!requireUser(user, res, "operator")) return;
+    const lifecycle = await giftLifecycleStatus();
+    if (!lifecycle.ready) throw new Error("Gift Code lifecycle chưa migration; chạy scripts/migrate-gift-code-lifecycle.sh.");
+    const body = await readJson(req); const id = Number(body.id); const disabled = Boolean(body.disabled); const action = disabled ? "DISABLE" : "ENABLE";
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `${action} GIFT ${id}`) throw new Error("Gift Code state hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE gift_codes SET disabled=?, updated_at=NOW() WHERE id=? LIMIT 1", [disabled ? 1 : 0, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy Gift Code.");
+    await audit(user, "rewards", disabled ? "gift_code.disabled" : "gift_code.enabled", "gift_code", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/gift-code-delete") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `DELETE GIFT ${id}`) throw new Error("Gift Code ID hoặc mã xác nhận không hợp lệ.");
+    const [rows] = await pool.query("SELECT code, redemption_count FROM gift_codes WHERE id=? LIMIT 1", [id]);
+    if (!rows[0]) throw new Error("Không tìm thấy Gift Code.");
+    if (Number(rows[0].redemption_count) > 0) throw new Error("Không xóa Gift Code đã có lượt đổi; hãy disable để bảo toàn đối soát.");
+    await pool.query("DELETE FROM gift_codes WHERE id=? LIMIT 1", [id]);
+    await audit(user, "rewards", "gift_code.deleted", "gift_code", String(id), "success", { code: rows[0].code });
+    writeJson(res, 200, { ok: true }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/job-draft") {
     if (!requireUser(user, res, "admin")) return;
