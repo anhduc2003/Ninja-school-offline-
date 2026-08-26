@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 MYSQL_DATA="${PREFIX}/var/lib/mysql"
 MYSQL_RUN="${PREFIX}/var/run/mysqld"
+MYSQL_PORT="${NSO_DB_PORT:-3306}"
 MYSQL_CNF="${ROOT_DIR}/.termux/mariadb.cnf"
 INIT_MARKER="${ROOT_DIR}/.termux/mariadb-initialized"
 
@@ -33,7 +34,7 @@ socket=${MYSQL_RUN}/mysqld.sock
 datadir=${MYSQL_DATA}
 socket=${MYSQL_RUN}/mysqld.sock
 pid-file=${ROOT_DIR}/.termux/mariadb.pid
-port=3306
+port=${MYSQL_PORT}
 bind-address=127.0.0.1
 skip-name-resolve
 skip-networking=0

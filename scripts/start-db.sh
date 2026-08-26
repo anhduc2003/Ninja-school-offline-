@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 MYSQL_DATA="${PREFIX}/var/lib/mysql"
 MYSQL_RUN="${PREFIX}/var/run/mysqld"
+MYSQL_PORT="${NSO_DB_PORT:-3306}"
 MYSQL_CNF="${ROOT_DIR}/.termux/mariadb.cnf"
 PID_FILE="${ROOT_DIR}/.termux/mariadb.pid"
 SAFE_PID_FILE="${ROOT_DIR}/.termux/mariadbd-safe.pid"
@@ -63,7 +64,12 @@ known_pids() {
   for candidate in "${PID_FILE}" "${SAFE_PID_FILE}"; do
     if [ -f "${candidate}" ]; then
       pid="$(cat "${candidate}" 2>/dev/null || true)"
-      if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then printf '%s\n' "${pid}"; fi
+      if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        cmd="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
+        case "${cmd}" in
+          *mariadbd*"${MYSQL_DATA}"*|*mysqld*"${MYSQL_DATA}"*|*mariadbd*"${MYSQL_CNF}"*|*mysqld*"${MYSQL_CNF}"*) printf '%s\n' "${pid}" ;;
+        esac
+      fi
     fi
   done
   if command -v pgrep >/dev/null 2>&1; then
@@ -111,7 +117,7 @@ mariadbd-safe \
   --socket="${SOCKET}" \
   --pid-file="${PID_FILE}" \
   --bind-address=127.0.0.1 \
-  --port=3306 \
+  --port="${MYSQL_PORT}" \
   --skip-networking=0 \
   --skip-name-resolve \
   --feedback=OFF \
@@ -125,7 +131,7 @@ printf '%s\n' "${SAFE_PID}" > "${SAFE_PID_FILE}"
 
 for _ in $(seq 1 60); do
   if [ -S "${SOCKET}" ] && mariadb-admin --defaults-file="${MYSQL_CNF}" ping >/dev/null 2>&1; then
-    printf '%s\n' "MariaDB đã sẵn sàng tại 127.0.0.1:3306 (socket: ${SOCKET})."
+    printf '%s\n' "MariaDB đã sẵn sàng tại 127.0.0.1:${MYSQL_PORT} (socket: ${SOCKET})."
     exit 0
   fi
   if ! kill -0 "${SAFE_PID}" 2>/dev/null && [ ! -S "${SOCKET}" ]; then
