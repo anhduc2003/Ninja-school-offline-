@@ -50,3 +50,9 @@ client.data.size.max=1024
 percent.damemob=2
 # true = lưu lịch sử vào MariaDB; false = không ghi các bảng history.
 open.historySQL=true
+
+# Runtime broadcast bridge cho admin panel; chỉ lắng nghe trên 127.0.0.1.
+# Đặt token dài, ngẫu nhiên và giữ bí mật; để trống nếu không muốn bật bridge.
+server.control.host=127.0.0.1
+server.control.port=18081
+server.control.token=

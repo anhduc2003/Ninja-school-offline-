@@ -2,7 +2,12 @@
   "bindHost": "127.0.0.1",
   "port": 18080,
   "bootstrapSchema": true,
-  "configSource": "Tự lấy db.* từ ../config.properties ở lần tạo config.local.json đầu tiên; sau đó config.local.json là cấu hình panel local riêng.",
+  "configSource": "Tự lấy db.* và server.control.* từ ../config.properties ở lần tạo config.local.json đầu tiên; sau đó config.local.json là cấu hình panel local riêng.",
+  "runtimeControl": {
+    "host": "127.0.0.1",
+    "port": 18081,
+    "token": ""
+  },
   "database": {
     "host": "127.0.0.1",
     "port": 3306,

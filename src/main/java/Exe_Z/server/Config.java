@@ -39,6 +39,8 @@ public class Config {
     // Server
     private int serverID;
     private int port;
+    private int controlPort = 18081;
+    private String controlToken = "";
 
     // MySql
     private String dbHost;
@@ -98,11 +100,21 @@ public class Config {
             Properties props = new Properties();
             props.load(new InputStreamReader(input, StandardCharsets.UTF_8));
             props.forEach((t, u) -> {
-                Log.info(String.format("Config - %s: %s", t, u));
+                String key = String.valueOf(t);
+                String value = key.equals("server.control.token") ? "[REDACTED]" : String.valueOf(u);
+                Log.info(String.format("Config - %s: %s", key, value));
             });
+
             showLog = Boolean.parseBoolean(props.getProperty("server.log.display"));
             serverID = Integer.parseInt(props.getProperty("server.id"));
             port = Integer.parseInt(props.getProperty("server.port"));
+            if (props.containsKey("server.control.port")) {
+                controlPort = Integer.parseInt(props.getProperty("server.control.port"));
+            }
+            if (props.containsKey("server.control.token")) {
+                controlToken = props.getProperty("server.control.token", "").trim();
+            }
+
             dbDriver = props.getProperty("db.driver");
             dbHost = props.getProperty("db.host");
             dbPort = Integer.parseInt(props.getProperty("db.port"));

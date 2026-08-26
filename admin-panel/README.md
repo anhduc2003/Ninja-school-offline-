@@ -26,7 +26,23 @@ Mở `http://127.0.0.1:18080` ngay sau khi panel sẵn sàng. Không nhập tên
 
 Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong tiến trình hiện tại. Các request ghi dữ liệu cần header token này; trang web local tự lấy token khi tải. Mọi thao tác nhạy cảm vẫn cần confirmation phrase, dùng SQL parameterized/allowlist, tạo snapshot khi module hỗ trợ và ghi `panel_audit_events` với actor `local-only`.
 
-Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java, không public MariaDB và không mô phỏng lệnh runtime không có contract SQL.
+Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java và không public MariaDB. Broadcast runtime là ngoại lệ có contract rõ ràng: bridge chỉ bind `127.0.0.1`, yêu cầu bearer token và chỉ gửi tin tới nhân vật online trong instance Java hiện tại.
+
+## Thông báo toàn server
+
+Mô-đun **Thông báo** có hai luồng riêng. `options.notify` là cấu hình persisted mà Java có thể đọc khi khởi động; nút **Gửi thông báo ngay** dùng runtime bridge để gọi `GlobalService.chat` và phát `CMD.CHAT_SERVER` tới tất cả nhân vật đang online, không cần restart.
+
+Để bật bridge, đặt các khóa sau trong `config.properties` thật của game rồi khởi động lại Java và panel:
+
+```properties
+server.control.host=127.0.0.1
+server.control.port=18081
+server.control.token=thay-bang-token-ngau-nhien-dai
+```
+
+Nếu `admin-panel/data/config.local.json` đã tồn tại từ trước, cập nhật thủ công phần `runtimeControl` tương ứng hoặc xóa riêng file cấu hình local rồi để panel tạo lại sau khi đã đặt token. Không commit token vào Git. Panel sẽ kiểm tra trạng thái bridge trước khi cho gửi; mỗi lần gửi cần nhập confirmation phrase dạng `BROADCAST NOTICE TEN_NGUOI_GUI` và được ghi vào audit.
+
+Thông báo không được lưu để phát lại cho người chơi offline. Nếu Java đang tắt, sai token hoặc bridge chưa cấu hình, panel chỉ hiển thị trạng thái lỗi và khóa nút gửi.
 
 ## Icon vật phẩm
 

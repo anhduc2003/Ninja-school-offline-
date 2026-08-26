@@ -179,8 +179,15 @@ function configFromGameProperties(template) {
   const game = readGameProperties();
   if (Object.keys(game).length === 0) return template;
   const port = Number(game["db.port"]);
+  const controlPort = Number(game["server.control.port"]);
   return {
     ...template,
+    runtimeControl: {
+      ...template.runtimeControl,
+      host: game["server.control.host"] || template.runtimeControl?.host || "127.0.0.1",
+      port: Number.isInteger(controlPort) && controlPort > 0 && controlPort <= 65535 ? controlPort : (template.runtimeControl?.port || 18081),
+      token: game["server.control.token"] || template.runtimeControl?.token || "",
+    },
     database: {
       ...template.database,
       host: game["db.host"] || template.database.host,
@@ -203,6 +210,36 @@ function ensureLocalConfig() {
 }
 
 const config = ensureLocalConfig();
+const runtimeControl = {
+  host: "127.0.0.1",
+  port: Number.isInteger(Number(config.runtimeControl?.port)) && Number(config.runtimeControl.port) > 0 && Number(config.runtimeControl.port) <= 65535 ? Number(config.runtimeControl.port) : 18081,
+  token: String(config.runtimeControl?.token || "").trim(),
+};
+
+async function runtimeControlRequest(path, options = {}) {
+  if (!runtimeControl.token) throw new Error("Runtime broadcast chưa được bật. Hãy đặt server.control.token trong config.properties rồi tạo lại config.local.json hoặc cập nhật admin-panel/data/config.local.json.");
+  const response = await fetch(`http://${runtimeControl.host}:${runtimeControl.port}${path}`, {
+    ...options,
+    headers: { Accept: "application/json", Authorization: `Bearer ${runtimeControl.token}`, ...(options.headers || {}) },
+    signal: AbortSignal.timeout(3000),
+  });
+  const raw = await response.text();
+  let body = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
+  if (!response.ok) throw new Error(body.error || `Runtime control trả về HTTP ${response.status}.`);
+  return body;
+}
+
+async function runtimeControlStatus() {
+  if (!runtimeControl.token) return { configured: false, online: false, endpoint: `127.0.0.1:${runtimeControl.port}`, error: "Chưa cấu hình token." };
+  try {
+    const body = await runtimeControlRequest("/api/control/health");
+    return { configured: true, online: true, endpoint: `127.0.0.1:${runtimeControl.port}`, onlinePlayers: Number(body.onlinePlayers || 0) };
+  } catch (error) {
+    return { configured: true, online: false, endpoint: `127.0.0.1:${runtimeControl.port}`, error: error.message || "Không kết nối được Java runtime." };
+  }
+}
+
 const pool = mysql.createPool({
   host: config.database.host,
   port: config.database.port,
@@ -622,6 +659,10 @@ async function api(req, res, url) {
     if (!requireUser(user, res, "operator")) return;
     writeJson(res, 200, await eventControlData()); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/runtime-control/status") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await runtimeControlStatus()); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/options") {
     if (!requireUser(user, res, "operator")) return;
     const [rows] = await pool.query("SELECT id, `key`, value FROM options WHERE `key` IN ('expserver','levelnjtl','notify') ORDER BY `key`");
@@ -947,6 +988,27 @@ async function api(req, res, url) {
       await audit(user, "custom-items", "item.created", "item", String(id), "success", { name, type, gender, level, icon, part, fashion, isUpToUp });
       writeJson(res, 200, { ok: true, id, reloadRequired: true }); return;
     } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/notice-broadcast") {
+    if (!requireUser(user, res, "moderator")) return;
+    const body = await readJson(req);
+    const sender = String(body.sender || "Hệ thống").trim().slice(0, 40);
+    const message = String(body.message || "").trim().slice(0, 500);
+    const confirmation = String(body.confirmation || "").trim();
+    const expectedConfirmation = `BROADCAST NOTICE ${sender.toUpperCase()}`;
+    if (!sender || !message || confirmation !== expectedConfirmation) throw new Error("Thông tin thông báo hoặc mã xác nhận không hợp lệ.");
+    try {
+      const result = await runtimeControlRequest("/api/control/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender, message }),
+      });
+      await audit(user, "notices", "notice.broadcast", "runtime-broadcast", sender, "success", { sender, message, onlinePlayers: Number(result.onlinePlayers || 0) });
+      writeJson(res, 200, { ok: true, onlinePlayers: Number(result.onlinePlayers || 0) }); return;
+    } catch (error) {
+      await audit(user, "notices", "notice.broadcast", "runtime-broadcast", sender, "failed", { sender, message, error: error.message || "unknown" });
+      throw error;
+    }
   }
   if (req.method === "POST" && url.pathname === "/api/actions/option-update") {
     if (!requireUser(user, res, "admin")) return;

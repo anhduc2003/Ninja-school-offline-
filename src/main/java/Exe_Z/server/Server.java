@@ -36,6 +36,7 @@ import Exe_Z.task.Task;
 import Exe_Z.map.TileMap;
 import Exe_Z.model.User;
 import Exe_Z.map.War;
+import Exe_Z.api.RuntimeControlServer;
 import Exe_Z.network.Session;
 import Exe_Z.option.SkillOption;
 import Exe_Z.socket.SocketIO;
@@ -1024,7 +1025,9 @@ public class Server {
             int port = Config.getInstance().getPort();
             Log.info("Start socket post=" + port);
             server = new ServerSocket(port);
+            RuntimeControlServer.start();
             start = true;
+
             id = 0;
             Log.info("Start server Success!");
             while (start) {
@@ -1158,6 +1161,7 @@ public class Server {
     }
 
     public static void close() {
+        RuntimeControlServer.stop();
         try {
             List<User> users = ServerManager.getUsers();
             for (User user : users) {
