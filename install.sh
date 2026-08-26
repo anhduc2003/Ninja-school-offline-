@@ -1,10 +1,19 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.0.2}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.0.3}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
+
+on_error() {
+  status=$?
+  printf '\n[ERROR] Installer dừng ở dòng %s (mã lỗi %s).\n' "${BASH_LINENO[0]:-unknown}" "${status}" >&2
+  printf '%s\n' "Nếu lỗi liên quan MariaDB, xem log: ${INSTALL_DIR}/logs/mariadb.log" >&2
+  printf '%s\n' 'Có thể chạy lại cùng lệnh; dữ liệu database nằm ngoài thư mục mã nguồn.' >&2
+  exit "${status}"
+}
+trap on_error ERR
 
 printf '%s\n' '============================================='
 printf '%s\n' ' Ninja School Offline - One Command Installer'
@@ -76,7 +85,7 @@ printf '%s\n' '[5/6] Build JAR server...'
 mvn -DskipTests package
 
 printf '%s\n' '[6/6] Khởi động game server headless...'
-bash scripts/start-server.sh
+bash run-server.sh
 
 printf '\n%s\n' '============================================='
 printf '%s\n' 'CÀI ĐẶT VÀ KHỞI ĐỘNG HOÀN TẤT'

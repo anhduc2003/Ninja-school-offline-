@@ -72,6 +72,8 @@ bash scripts/init-db.sh
 
 Script sẽ khởi động MariaDB, tạo database `nsoz` nếu chưa tồn tại và import `SQL/nsoz.sql` **chỉ khi database chưa có bảng**. Khi database đã có bảng, script bỏ qua import để tránh ghi đè dữ liệu người chơi. Vì vậy, trước khi import vào database đang sử dụng, hãy sao lưu dữ liệu nếu cần. Bản SQL trong repository đã loại tài khoản `admin` mẫu có mật khẩu rõ ràng từ archive gốc; hãy tạo tài khoản riêng qua quy trình đăng ký/web hiện có hoặc công cụ quản trị của bạn, rồi đặt mật khẩu mạnh.
 
+Bản cài đặt cũng tạo `.termux/mariadb.cnf` với `feedback=OFF`, `feedback_url=` và `innodb_use_native_aio=0`. Thiết lập này xử lý lỗi MariaDB trên một số bản Termux/Android khi feedback plugin không lấy được MAC address và làm InnoDB khởi tạo thất bại [4].
+
 ## Lệnh chạy server game
 
 Sau khi cài đặt xong, dùng lệnh sau để khởi động cả MariaDB và game server:
@@ -127,3 +129,5 @@ Server game và MariaDB chạy trên điện thoại sẽ tiêu thụ CPU, RAM, 
 [2]: https://docs.github.com/en/repositories/creating-and-managing-repositories/repository-limits "GitHub — Repository limits"
 
 [3]: https://wiki.termux.dev/wiki/Package_Management "Termux Wiki — Package Management"
+
+[4]: https://github.com/termux/termux-packages/issues/21556 "Termux packages — MariaDB initialization issue #21556"
