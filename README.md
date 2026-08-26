@@ -11,6 +11,7 @@ Repository này chứa phần mã nguồn server Java của Ninja School Offline
 | `SQL/nsoz.sql` | Schema và dữ liệu khởi tạo cho MariaDB/MySQL |
 | `item_roi/` | Các cấu hình vật phẩm theo sự kiện |
 | `config.properties.example` | Cấu hình mẫu, không chứa mật khẩu cá nhân |
+| `install.sh` | Bootstrap toàn bộ quá trình cài đặt và khởi động bằng một lệnh |
 | `scripts/` | Script cài đặt, khởi động database, build/chạy và dừng server |
 | `pom.xml` | Cấu hình Maven; đã cập nhật Lombok/compiler để build được với JDK 17 hoặc 21 |
 
@@ -20,21 +21,23 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 
 Điện thoại cần cài Termux từ nguồn chính thức hoặc F-Droid, có bộ nhớ trống phù hợp với thư mục dữ liệu game và được phép chạy nền. Quy trình cài package của Termux sử dụng `pkg`, một wrapper của APT được khuyến nghị trong tài liệu Termux [3]. Server cần OpenJDK 17 trở lên, Maven, Git và MariaDB. Repository đặt bytecode mục tiêu Java 17 để tương thích rộng hơn; bản build đã được kiểm thử bằng JDK 21.
 
-## Cài đặt nhanh trên Termux
+## Cài đặt toàn bộ bằng một lệnh
 
-Mở Termux và chạy:
+Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-pkg update -y && pkg upgrade -y
-pkg install -y git
-cd ~
-git clone https://github.com/anhduc2003/Ninja-school-offline-.git
-cd Ninja-school-offline-
-chmod +x scripts/*.sh
-bash scripts/setup-termux.sh
+curl -fsSL https://raw.githubusercontent.com/anhduc2003/Ninja-school-offline-/main/install.sh | bash
 ```
 
-Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage`. Không cần cấp quyền root cho quy trình này. Script cài đặt tạo thư mục dữ liệu MariaDB trong `$PREFIX/var/lib/mysql`, tạo `config.properties` từ file mẫu nếu file đó chưa tồn tại, và không ghi đè cấu hình đã có.
+Lệnh này tự cập nhật package, cài Git/OpenJDK/Maven/MariaDB, clone hoặc cập nhật repository, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
+
+Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/anhduc2003/Ninja-school-offline-/main/install.sh | INSTALL_DIR="$HOME/ninja-server" bash
+```
+
+Script kiểm tra repository hiện có bằng `git pull --ff-only`; nếu thư mục đích tồn tại nhưng không phải Git repository, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
 
 ## Cấu hình database
 
