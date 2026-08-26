@@ -53,6 +53,9 @@ if [ -e "${INSTALL_DIR}" ]; then
   if [ -x "${INSTALL_DIR}/scripts/stop-server.sh" ]; then
     bash "${INSTALL_DIR}/scripts/stop-server.sh" || true
   fi
+  if [ -x "${INSTALL_DIR}/scripts/stop-db.sh" ]; then
+    bash "${INSTALL_DIR}/scripts/stop-db.sh" || true
+  fi
   if [ -f "${INSTALL_DIR}/config.properties" ]; then
     cp "${INSTALL_DIR}/config.properties" "${DOWNLOAD_DIR}/config.properties.backup"
   fi

@@ -72,7 +72,7 @@ bash scripts/init-db.sh
 
 Script sẽ khởi động MariaDB, tạo database `nsoz` nếu chưa tồn tại và import `SQL/nsoz.sql` **chỉ khi database chưa có bảng**. Khi database đã có bảng, script bỏ qua import để tránh ghi đè dữ liệu người chơi. Vì vậy, trước khi import vào database đang sử dụng, hãy sao lưu dữ liệu nếu cần. Bản SQL trong repository đã loại tài khoản `admin` mẫu có mật khẩu rõ ràng từ archive gốc; hãy tạo tài khoản riêng qua quy trình đăng ký/web hiện có hoặc công cụ quản trị của bạn, rồi đặt mật khẩu mạnh.
 
-Bản cài đặt cũng tạo `.termux/mariadb.cnf` với `feedback=OFF`, `feedback_url=` và `innodb_use_native_aio=0`. Thiết lập này xử lý lỗi MariaDB trên một số bản Termux/Android khi feedback plugin không lấy được MAC address và làm InnoDB khởi tạo thất bại [4].
+Bản cài đặt cũng tạo `.termux/mariadb.cnf` với `feedback=OFF`, `feedback_url=` và `innodb_use_native_aio=0`. MariaDB được khởi động bằng `mariadbd-safe` thay vì `--daemonize`, phù hợp với lệnh khởi động mà gói Termux in ra. Thiết lập này xử lý lỗi MariaDB trên một số bản Termux/Android khi feedback plugin không lấy được MAC address và làm InnoDB khởi tạo thất bại [4].
 
 ## Lệnh chạy server game
 
@@ -102,10 +102,16 @@ Mặc định server lắng nghe cổng `14444`. Nếu cần giảm hoặc tăng
 JAVA_OPTS='-Xms128m -Xmx512m' bash run-server.sh
 ```
 
-Dừng server bằng:
+Dừng game server bằng:
 
 ```bash
 bash scripts/stop-server.sh
+```
+
+Nếu cần dừng cả MariaDB:
+
+```bash
+bash scripts/stop-db.sh
 ```
 
 `start-server.sh` gọi `termux-wake-lock` nếu tiện ích đó có sẵn để hạn chế việc Android ngủ khi server đang chạy. Khi dừng server, script gọi `termux-wake-unlock` nếu có.
