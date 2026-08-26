@@ -28,6 +28,12 @@ Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong t
 
 Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java, không public MariaDB và không mô phỏng lệnh runtime không có contract SQL.
 
+## Chỉnh nhân vật và hành trang trực quan
+
+Trong **Người chơi**, tìm nhân vật rồi chọn **Chỉnh nhân vật**. Chỉ số tiềm năng, kỹ năng, EXP, số ô túi/rương và bốn chỉ số potential được nhập bằng các ô số có nhãn; không cần nhập mảng JSON.
+
+Phần **Hành trang trực quan** tách thành Túi đồ, Rương, Trang bị và Thời trang. Chọn **Thêm vật phẩm** hoặc **Đổi item**, tìm template trong catalog, rồi điều chỉnh từng dòng: vị trí ô, số lượng, khóa, system, upgrade, yên, hạn dùng và option chỉ số. Khi bấm lưu, panel tạo JSON theo contract Java, kiểm tra giới hạn slot, item/option tồn tại, loại trang bị, confirmation phrase, snapshot và audit. Nếu inventory JSON cũ không hợp lệ, editor thông báo section lỗi và không tự thay đổi dữ liệu.
+
 ## Event Control Center
 
 Mô-đun **Event Control** quản lý catalog event Java, lớp cấu hình, thời hạn dùng chung, preview `event_points`, bảng top và nguồn vật phẩm rơi. Panel không chuyển event nóng: thay vào đó nó lưu một **plan pending** có audit, và plan chỉ được launcher áp dụng trước lần Java khởi động tiếp theo.

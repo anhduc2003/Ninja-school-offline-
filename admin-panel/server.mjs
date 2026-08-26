@@ -353,6 +353,18 @@ function randomUUID() {
   return `${randomBytes(4).toString("hex")}-${randomBytes(2).toString("hex")}-${randomBytes(2).toString("hex")}-${randomBytes(2).toString("hex")}-${randomBytes(6).toString("hex")}`;
 }
 
+function inventoryOptionIds(payload) {
+  const ids = new Set();
+  const collectItem = item => {
+    for (const option of item?.options || []) ids.add(Number(option[0]));
+    for (const gem of item?.gems || []) collectItem(gem);
+  };
+  for (const section of ["bag", "box", "equiped", "fashion"]) {
+    for (const item of JSON.parse(payload[section] || "[]")) collectItem(item);
+  }
+  return [...ids];
+}
+
 function tcpStatus(host, port, timeout = 800) {
   return new Promise(resolve => {
     const socket = net.createConnection({ host, port });
@@ -490,8 +502,12 @@ async function api(req, res, url) {
     const columns = await tableColumns("players");
     const selected = availableColumns(columns, ["id", "user_id", "name", "online", "point", "spoint", "potential", "numberCellBag", "numberCellBox", "bag", "box", "equiped", "fashion"]);
     if (!selected.includes("id") || !selected.includes("online")) throw new Error("Schema players không đủ id/online để chỉnh dữ liệu an toàn.");
-    const [rows] = await pool.query(`SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1`, [playerId]);
-    writeJson(res, 200, { row: rows[0] || null, editableStats: ["point", "spoint", "potential", "numberCellBag", "numberCellBox"].filter(column => columns.has(column)).concat(columns.has("data") ? ["exp"] : []), inventoryEditable: ["bag", "box", "equiped", "fashion"].every(column => columns.has(column)) }); return;
+    const [[rows], [inventoryCatalog], [optionCatalog]] = await Promise.all([
+      pool.query(`SELECT ${selected.map(column => `\`${column}\``).join(", ")} FROM players WHERE id = ? LIMIT 1`, [playerId]),
+      pool.query("SELECT id, name, type, gender, level FROM item ORDER BY id LIMIT 200"),
+      pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
+    ]);
+    writeJson(res, 200, { row: rows[0] || null, editableStats: ["point", "spoint", "potential", "numberCellBag", "numberCellBox"].filter(column => columns.has(column)).concat(columns.has("data") ? ["exp"] : []), inventoryEditable: ["bag", "box", "equiped", "fashion"].every(column => columns.has(column)), inventoryCatalog, optionCatalog }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/shop") {
     if (!requireUser(user, res, "analyst")) return;
@@ -776,6 +792,13 @@ async function api(req, res, url) {
       const missing = ids.filter(id => !known.has(id) && !oldIds.has(id));
       if (missing.length) throw new Error(`Item template không tồn tại trong catalog: ${missing.slice(0, 10).join(", ")}.`);
       const typeById = new Map(knownRows.map(row => [Number(row.id), Number(row.type)]));
+      const optionIds = inventoryOptionIds(payload);
+      if (optionIds.length) {
+        const [knownOptionRows] = await conn.query(`SELECT id FROM item_option WHERE id IN (${optionIds.map(() => "?").join(",")})`, optionIds);
+        const knownOptions = new Set(knownOptionRows.map(row => Number(row.id)));
+        const missingOptions = optionIds.filter(id => !knownOptions.has(id));
+        if (missingOptions.length) throw new Error(`Option item không tồn tại trong catalog: ${missingOptions.slice(0, 10).join(", ")}.`);
+      }
       for (const section of ["equiped", "fashion"]) {
         const occupiedTypes = new Set();
         for (const entry of JSON.parse(payload[section])) {
