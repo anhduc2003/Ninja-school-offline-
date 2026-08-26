@@ -28,7 +28,7 @@ Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archi
 Mở Termux và dán đúng một lệnh sau:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.2/install-v1.4.2.sh | bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.3/install-v1.4.3.sh | bash
 ```
 
 Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
@@ -36,7 +36,7 @@ Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải m�
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
 ```bash
-curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.2/install-v1.4.2.sh | INSTALL_DIR="$HOME/ninja-server" bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.3/install-v1.4.3.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
 Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
@@ -95,10 +95,18 @@ Launcher sẽ tự kiểm tra MariaDB, build JAR nếu chưa có, rồi chạy s
 
 Mỗi lần chạy `run-server.sh`, launcher kiểm tra `origin/main` trước khi MariaDB/JVM khởi động. Khi source local sạch và commit hiện tại có thể **fast-forward** đến GitHub, launcher tự đồng bộ source, xóa JAR cũ để Maven build lại và làm mới marker dependency panel. Database MariaDB, `config.properties`, cấu hình/session panel, backup và logs là dữ liệu local bị ignore nên không bị Git ghi đè.
 
+Nếu một bản cài Release hợp lệ thiếu thư mục `.git`, launcher v1.4.3 có thể tự tạo metadata Git rồi so source với tag trong `.termux/release-installed` trước khi fast-forward. Chỉ khi source trùng tag Release và không có file source local mới thì bootstrap mới chạy; marker sai, source đã sửa hoặc dữ liệu GitHub không tải được sẽ bị bỏ qua an toàn. Cơ chế này không reset/merge source local không xác minh được.
+
 Nếu GitHub không kết nối được, có thay đổi source local chưa commit, history diverged hoặc game server đang chạy, launcher ghi lý do vào `logs/sync.log` rồi dùng source local hiện có — không `reset`, không xóa database và không tự merge. Có thể tắt kiểm tra cập nhật cho một lần chạy:
 
 ```bash
 NSO_AUTO_SYNC=0 bash ~/Ninja-school-offline-/run-server.sh
+```
+
+Để tắt riêng bước bootstrap metadata trên bản Release không có `.git`, dùng `NSO_SYNC_BOOTSTRAP=0`. Nếu auto-update bị bỏ qua, xem lý do chính xác bằng:
+
+```bash
+tail -n 50 ~/Ninja-school-offline-/logs/sync.log
 ```
 
 Theo dõi log:
