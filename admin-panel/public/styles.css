@@ -181,6 +181,23 @@ tr:last-child td { border-bottom: 0; }
 .gift-review-grid span, .gift-review-grid strong { display: block; }
 .gift-review-grid span { color: var(--muted); font-size: 11px; }
 .gift-review-grid strong { margin-top: 5px; color: var(--ink); font-size: 13px; line-height: 1.35; }
+.inventory-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.inventory-summary-card { min-height: 86px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: rgba(4, 16, 20, .34); }
+.inventory-summary-card > div:first-child { display: flex; justify-content: space-between; gap: 8px; }
+.inventory-summary-card span { color: var(--muted); font-size: 11px; }
+.inventory-chip-list, .event-preview-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.inventory-chip { display: inline-flex; max-width: 100%; padding: 4px 7px; border: 1px solid rgba(78, 153, 149, .38); border-radius: 999px; color: #d2f7ef; font-size: 11px; overflow-wrap: anywhere; }
+.event-drop-builder { margin-top: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: rgba(4, 16, 20, .28); }
+.event-drop-list { display: grid; gap: 8px; }
+.event-drop-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(106px, .38fr) auto; align-items: end; gap: 10px; padding: 10px; border: 1px solid rgba(31, 66, 68, .8); border-radius: 10px; }
+.event-drop-row.selected { border-color: rgba(84, 223, 206, .72); background: rgba(24, 131, 123, .12); }
+.event-drop-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.runbook-list { display: grid; gap: 8px; padding-left: 20px; color: var(--muted); line-height: 1.5; }
+.option-value { margin: 0; color: #d8ebe7; line-height: 1.6; }
+.structured-list { display: grid; gap: 7px; margin: 0; }
+.structured-list > div { display: grid; grid-template-columns: minmax(90px, .45fr) 1fr; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(31, 66, 68, .6); }
+.structured-list dt { color: var(--muted); font-size: 12px; }
+.structured-list dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .shop-option-row button { min-height: 37px; padding: 7px 9px; font-size: 11px; }
 .shop-row-list { display: grid; gap: 9px; margin-top: 12px; }
 .shop-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(31, 66, 68, .85); border-radius: 10px; padding: 11px; background: rgba(7, 24, 29, .72); }
@@ -192,5 +209,5 @@ tr:last-child td { border-bottom: 0; }
 @keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 1000px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .split, .shop-layout { grid-template-columns: 1fr; } .potential-editor, .inventory-section-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 760px) { .app { display: block; } .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: min(82vw, 290px); transform: translateX(-105%); transition: transform 240ms var(--ease-out); box-shadow: var(--shadow); } .sidebar.open { transform: translateX(0); } .icon-btn { display: inline-flex; } .topbar { min-height: 68px; padding: 12px 18px; } .topbar h2 { font-size: 18px; } .content { padding: 18px; } .metric-grid, .module-grid, .form-grid, .potential-editor, .inventory-section-grid, .inventory-item-grid, .shop-custom-price, .gift-choice-grid, .gift-review-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: auto; } .inventory-expire { grid-column: auto; } .inventory-section-head, .inventory-item-head { align-items: flex-start; } .inventory-item-head { display: grid; } .inventory-item-actions { justify-content: flex-start; } .inventory-option-row, .shop-option-row, .gift-option-row { grid-template-columns: 1fr; } .shop-row, .gift-reward-card { align-items: flex-start; flex-direction: column; } .shop-row > div:last-child { justify-content: flex-start; } .gift-stepper { display: flex; overflow-x: auto; padding-bottom: 3px; } .gift-step { flex: 0 0 116px; } .gift-code-input { align-items: stretch; flex-direction: column; } .status-pill { font-size: 11px; } .module-hero { display: block; } .module-hero h3 { font-size: 24px; } button { min-height: 44px; } }
+@media (max-width: 760px) { .app { display: block; } .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: min(82vw, 290px); transform: translateX(-105%); transition: transform 240ms var(--ease-out); box-shadow: var(--shadow); } .sidebar.open { transform: translateX(0); } .icon-btn { display: inline-flex; } .topbar { min-height: 68px; padding: 12px 18px; } .topbar h2 { font-size: 18px; } .content { padding: 18px; } .metric-grid, .module-grid, .form-grid, .potential-editor, .inventory-section-grid, .inventory-item-grid, .shop-custom-price, .gift-choice-grid, .gift-review-grid, .inventory-summary-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: auto; } .inventory-expire { grid-column: auto; } .inventory-section-head, .inventory-item-head { align-items: flex-start; } .inventory-item-head { display: grid; } .inventory-item-actions { justify-content: flex-start; } .inventory-option-row, .shop-option-row, .gift-option-row, .event-drop-row, .structured-list > div { grid-template-columns: 1fr; } .shop-row, .gift-reward-card { align-items: flex-start; flex-direction: column; } .shop-row > div:last-child { justify-content: flex-start; } .event-drop-actions { width: 100%; } .gift-stepper { display: flex; overflow-x: auto; padding-bottom: 3px; } .gift-step { flex: 0 0 116px; } .gift-code-input { align-items: stretch; flex-direction: column; } .status-pill { font-size: 11px; } .module-hero { display: block; } .module-hero h3 { font-size: 24px; } button { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
