@@ -14,3 +14,8 @@
 *.jar
 *.log
 /.termux/
+admin-panel/node_modules/
+admin-panel/config.local.json
+admin-panel/data/
+admin-panel/backups/
+admin-panel/reports/

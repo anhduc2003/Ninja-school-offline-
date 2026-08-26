@@ -12,8 +12,8 @@ printf '%s\n' '==> Cập nhật package Termux'
 pkg update -y
 pkg upgrade -y
 
-printf '%s\n' '==> Cài Git, OpenJDK, Maven và MariaDB'
-pkg install -y git maven mariadb
+printf '%s\n' '==> Cài Git, OpenJDK, Maven, Node.js và MariaDB'
+pkg install -y git maven nodejs mariadb
 if ! command -v java >/dev/null 2>&1; then
   if ! pkg install -y openjdk-21; then
     printf '%s\n' 'Không có openjdk-21 trên mirror hiện tại; thử cài openjdk-17.'

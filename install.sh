@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.0.6}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.1.0}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
@@ -26,7 +26,7 @@ fi
 printf '%s\n' '[1/6] Cài/cập nhật package Termux...'
 pkg update -y
 pkg upgrade -y
-pkg install -y curl git mariadb
+pkg install -y curl git mariadb nodejs
 JAVA_MAJOR=""
 if command -v java >/dev/null 2>&1; then
   JAVA_MAJOR="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n 1 || true)"
@@ -56,6 +56,9 @@ if [ -e "${INSTALL_DIR}" ]; then
   if [ -x "${INSTALL_DIR}/scripts/stop-db.sh" ]; then
     bash "${INSTALL_DIR}/scripts/stop-db.sh" || true
   fi
+  if [ -x "${INSTALL_DIR}/admin-panel/stop-panel.sh" ]; then
+    bash "${INSTALL_DIR}/admin-panel/stop-panel.sh" || true
+  fi
   if [ -f "${INSTALL_DIR}/config.properties" ]; then
     cp "${INSTALL_DIR}/config.properties" "${DOWNLOAD_DIR}/config.properties.backup"
   fi
@@ -72,7 +75,7 @@ mkdir -p "${INSTALL_DIR}/.termux"
 printf '%s\n' "${RELEASE_VERSION}" > "${INSTALL_DIR}/.termux/release-installed"
 
 cd "${INSTALL_DIR}"
-chmod +x run-server.sh scripts/*.sh
+chmod +x run-server.sh scripts/*.sh admin-panel/*.sh
 mkdir -p .termux logs
 
 printf '%s\n' '[3/6] Tạo cấu hình server nếu chưa có...'
@@ -93,7 +96,9 @@ bash run-server.sh
 printf '\n%s\n' '============================================='
 printf '%s\n' 'CÀI ĐẶT VÀ KHỞI ĐỘNG HOÀN TẤT'
 printf '%s\n' "Thư mục: ${INSTALL_DIR}"
-printf '%s\n' 'Cổng game: 14444'
+printf '%s\n' "Cổng game: 14444"
+printf '%s\n' 'Web panel offline: http://127.0.0.1:18080'
+printf '%s\n' "Đăng nhập lần đầu: ${INSTALL_DIR}/admin-panel/data/first-login.txt"
 printf '%s\n' "Chạy server game: bash ${INSTALL_DIR}/run-server.sh"
 printf '%s\n' "Xem log: tail -f ${INSTALL_DIR}/logs/server.log"
 printf '%s\n' "Dừng server: bash ${INSTALL_DIR}/scripts/stop-server.sh"

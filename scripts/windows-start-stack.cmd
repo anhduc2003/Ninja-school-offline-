@@ -1,0 +1,37 @@
+@echo off
+setlocal EnableExtensions
+set "ROOT_DIR=%~dp0.."
+for %%I in ("%ROOT_DIR%") do set "ROOT_DIR=%%~fI"
+set "MYSQL_SERVICE=%NSO_MYSQL_SERVICE%"
+if "%MYSQL_SERVICE%"=="" set "MYSQL_SERVICE=MariaDB"
+
+where java >nul 2>&1 || (echo [ERROR] Khong tim thay Java 17+ trong PATH.& exit /b 1)
+where mvn >nul 2>&1 || (echo [ERROR] Khong tim thay Maven trong PATH.& exit /b 1)
+where node >nul 2>&1 || (echo [ERROR] Khong tim thay Node.js trong PATH.& exit /b 1)
+
+sc query "%MYSQL_SERVICE%" >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] Khong tim thay Windows service "%MYSQL_SERVICE%".
+  echo Cai MariaDB/MySQL Windows service truoc, hoac dat NSO_MYSQL_SERVICE thanh ten service dung.
+  exit /b 1
+)
+sc query "%MYSQL_SERVICE%" | find "RUNNING" >nul
+if errorlevel 1 (
+  echo [1/4] Khoi dong MariaDB service %MYSQL_SERVICE%...
+  net start "%MYSQL_SERVICE%" || exit /b 1
+)
+
+cd /d "%ROOT_DIR%"
+echo [2/4] Build Java server neu can...
+if not exist "target\Nso-jar-with-dependencies.jar" call mvn -DskipTests package || exit /b 1
+
+echo [3/4] Khoi dong Ninja Control Room va scheduler...
+call admin-panel\run-panel-stack.cmd
+
+echo [4/4] Khoi dong Java game server headless...
+start "Ninja School Game Server" /b java -Dninja.headless=true -jar "target\Nso-jar-with-dependencies.jar"
+echo.
+echo Game TCP: 127.0.0.1:14444
+echo Control Room: http://127.0.0.1:18080
+echo Panel credential lan dau: admin-panel\data\first-login.txt
+endlocal

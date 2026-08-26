@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#071015" />
+  <title>Ninja Control Room</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <section id="login-screen" class="login-shell">
+    <div class="login-card">
+      <p class="eyebrow">NINJA SCHOOL / OFFLINE OPS</p>
+      <h1>Control Room</h1>
+      <p class="muted">Đăng nhập cục bộ để quản trị server cùng máy. Không có dữ liệu nào được gửi ra Internet.</p>
+      <form id="login-form" class="form-stack">
+        <label>Tài khoản<input id="username" name="username" autocomplete="username" value="admin" required /></label>
+        <label>Mật khẩu<input id="password" name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit" class="primary">Mở Control Room</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+    </div>
+  </section>
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">N</span><div><strong>Ninja Control</strong><small>Offline console</small></div></div>
+      <nav id="module-nav" aria-label="Mô-đun quản trị"></nav>
+      <div class="sidebar-foot"><span id="role-badge" class="role-badge"></span><button id="logout" class="ghost">Đăng xuất</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><button id="menu-toggle" class="icon-btn" aria-label="Mở menu">≡</button><div><p class="eyebrow">LOCAL / PROTECTED</p><h2 id="page-title">Tổng quan</h2></div><div class="status-pill"><span id="status-dot"></span><span id="status-text">Đang kiểm tra</span></div></header>
+      <section id="content" class="content" tabindex="-1"></section>
+    </main>
+  </div>
+  <template id="confirm-template"><div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h3 id="confirm-title">Xác nhận thao tác</h3><p class="muted"></p><label>Nhập mã xác nhận<input aria-label="Mã xác nhận" /></label><div class="actions"><button class="ghost cancel">Huỷ</button><button class="primary confirm">Xác nhận</button></div></div></template>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
