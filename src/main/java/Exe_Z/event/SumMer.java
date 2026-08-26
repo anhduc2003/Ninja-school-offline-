@@ -83,25 +83,7 @@ public class SumMer extends Event {
                     Config.getInstance().getEventHour(),
                     Config.getInstance().getEventMinute(),
                     Config.getInstance().getEventSecond());
-        StringBuilder objStr = new StringBuilder();
-        try {
-            String content = Files.readString(Paths.get("item_roi/event_SumMer/SUMMER.json"));
-            objStr.append(content);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        try {
-            JSONArray js = (JSONArray) JSONValue.parse(objStr.toString());
-            for (int i = 0; i < js.size(); i++) {
-                JSONObject job1 = (JSONObject) JSONValue.parse(js.get(i).toString());
-                double percent = Double.parseDouble(job1.get("percent").toString());
-                int id = Integer.parseInt(job1.get("id").toString());
-                itemsThrownFromMonsters.add(percent, id);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        loadMonsterDropTable("summer", "item_roi/event_SumMer/SUMMER.json");
 
         keyEventPoint.add(EventPoint.DIEM_TIEU_XAI);
         keyEventPoint.add(TOP_LUCKY_CHARM);

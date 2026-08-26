@@ -11,6 +11,7 @@ import { availableColumns } from "./lib/schema.mjs";
 import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 import { existingItemIds, validateInventory, validatePlayerStats } from "./lib/player-state.mjs";
 import { resolveBootstrapPassword } from "./lib/bootstrap-password.mjs";
+import { EVENT_CATALOG, findEvent, readEventAsset, readEventPlan, validateDropTable, writePendingEventPlan } from "./lib/event-control.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -37,7 +38,7 @@ const modules = [
   ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
   ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Tạo và chỉnh catalog item có validation", "operator"],
   ["shop", "Cửa hàng", "Nội dung", "Shopcoin và hàng hóa NPC từ stores/store_data", "operator"],
-  ["events", "Sự kiện", "Nội dung", "Đọc event point/reward state; lifecycle runtime không tự động hóa", "operator"],
+  ["events", "Event Control", "Nội dung", "Catalog, vật phẩm rơi, điểm/top và cấu hình chờ áp dụng sau restart Java", "operator"],
   ["rates", "Tỷ lệ game", "Nội dung", "EXP, level rate và option có phê duyệt", "admin"],
   ["bosses", "Quái & Boss", "Nội dung", "Metadata quái, boss, HP và bản đồ spawn", "operator"],
   ["notices", "Thông báo", "Vận hành", "Cập nhật options.notify theo Java contract; broadcast runtime không tự động hóa", "moderator"],
@@ -58,6 +59,49 @@ function readGameProperties() {
     const index = line.indexOf("=");
     return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
   }));
+}
+
+async function eventControlData() {
+  const game = readGameProperties();
+  const activeClassName = game["game.event"] || "Exe_Z.event.OFF";
+  const activeEvent = EVENT_CATALOG.find(event => event.className === activeClassName) || null;
+  const eventColumns = await tableColumns("event_points");
+  let rows = [];
+  let summary = [];
+  let unavailable = null;
+  if (eventColumns.size === 0) {
+    unavailable = "Schema game không có event_points; vẫn tạo được plan event nhưng chưa có dữ liệu điểm/top để xem.";
+  } else {
+    [summary] = await pool.query("SELECT event_id, COUNT(*) AS player_count FROM event_points GROUP BY event_id ORDER BY event_id");
+    [rows] = await pool.query("SELECT ep.id, ep.event_id, ep.player_id, p.name AS player_name, ep.point FROM event_points ep LEFT JOIN players p ON p.id = ep.player_id ORDER BY ep.event_id, ep.id DESC LIMIT 200");
+  }
+  const hasEnd = ["event.year", "event.month", "event.day", "event.hour", "event.minute", "event.second"].every(key => game[key] !== undefined);
+  return {
+    active: {
+      className: activeClassName,
+      eventKey: activeEvent?.key || null,
+      endAt: hasEnd ? `${game["event.year"]}-${String(game["event.month"]).padStart(2, "0")}-${String(game["event.day"]).padStart(2, "0")} ${String(game["event.hour"]).padStart(2, "0")}:${String(game["event.minute"]).padStart(2, "0")}:${String(game["event.second"]).padStart(2, "0")}` : null,
+    },
+    pending: readEventPlan(),
+    catalog: EVENT_CATALOG.map(event => {
+      const asset = readEventAsset(event);
+      return { ...event, asset: { source: asset.source, rows: asset.rows, error: asset.error } };
+    }),
+    rows,
+    summary,
+    unavailable,
+    applyRunbook: "Panel chỉ lưu kế hoạch pending. Dừng Java game, rồi chạy bash run-server.sh; launcher sao lưu config.properties, áp dụng plan và Java nạp event khi khởi động kế tiếp.",
+  };
+}
+
+async function validateEventDropItems(dropTable) {
+  const ids = [...new Set(dropTable.map(row => row.id))];
+  const columns = await tableColumns("item");
+  if (columns.size === 0) throw new Error("Schema game thiếu catalog item; không thể an toàn xác thực drop table event.");
+  const [rows] = await pool.query(`SELECT id FROM item WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+  const found = new Set(rows.map(row => Number(row.id)));
+  const missing = ids.filter(id => !found.has(id));
+  if (missing.length) throw new Error(`Item ID không tồn tại trong catalog: ${missing.join(", ")}.`);
 }
 
 function configFromGameProperties(template) {
@@ -440,6 +484,10 @@ async function api(req, res, url) {
     );
     writeJson(res, 200, { rows, summary }); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/event-control") {
+    if (!requireUser(user, res, "operator")) return;
+    writeJson(res, 200, await eventControlData()); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/options") {
     if (!requireUser(user, res, "operator")) return;
     const [rows] = await pool.query("SELECT id, `key`, value FROM options WHERE `key` IN ('expserver','levelnjtl','notify') ORDER BY `key`");
@@ -498,6 +546,38 @@ async function api(req, res, url) {
     if (!requireUser(user, res, "analyst")) return;
     const [rows] = await pool.query("SELECT id, alert_key, severity, message, status, acknowledged_at, created_at FROM panel_alerts ORDER BY created_at DESC LIMIT 100");
     writeJson(res, 200, { rows }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/event-plan") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req);
+    const eventKey = String(body.eventKey || "");
+    const event = findEvent(eventKey);
+    const endAt = new Date(body.endAt);
+    if (!event || Number.isNaN(endAt.getTime()) || endAt.getTime() <= Date.now() + 60_000 || body.confirmation !== `QUEUE EVENT ${eventKey.toUpperCase()}`) {
+      throw new Error("Event, thời hạn hoặc mã xác nhận không hợp lệ. Thời hạn phải muộn hơn hiện tại ít nhất một phút.");
+    }
+    let dropTable = null;
+    if (event.assetPath) {
+      dropTable = validateDropTable(body.dropTable);
+      await validateEventDropItems(dropTable);
+    } else if (body.dropTable !== undefined && body.dropTable !== null && String(body.dropTable).trim() !== "") {
+      throw new Error("Event này có drop table hard-code trong Java; panel chỉ preview, không ghi đè JSON.");
+    }
+    const plan = { id: randomUUID(), version: 1, status: "pending", eventKey: event.key, className: event.className, label: event.label, eventId: event.eventId, endAt: endAt.toISOString(), dropTable, createdAt: new Date().toISOString(), createdBy: user.username };
+    writePendingEventPlan(plan);
+    await audit(user, "events", "event.plan.queued", "event_plan", plan.id, "success", { eventKey: event.key, className: event.className, endAt: plan.endAt, dropRows: dropTable?.length || 0 });
+    writeJson(res, 200, { ok: true, plan, restartRequired: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/event-plan-discard") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req);
+    const plan = readEventPlan();
+    if (!plan || body.confirmation !== `DISCARD EVENT ${plan.id}`) throw new Error("Không có event pending hoặc mã xác nhận không hợp lệ.");
+    const { rmSync } = await import("node:fs");
+    const { PENDING_PLAN_PATH } = await import("./lib/event-control.mjs");
+    rmSync(PENDING_PLAN_PATH, { force: true });
+    await audit(user, "events", "event.plan.discarded", "event_plan", plan.id, "success", { eventKey: plan.eventKey });
+    writeJson(res, 200, { ok: true }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/account-status") {
     if (!requireUser(user, res, "moderator")) return;

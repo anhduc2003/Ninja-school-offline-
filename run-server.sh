@@ -10,6 +10,8 @@ if [ ! -f "${ROOT_DIR}/config.properties" ]; then
   printf '%s\n' 'Đã tạo config.properties từ file mẫu. Hãy kiểm tra cấu hình database rồi chạy lại.'
 fi
 
+node "${ROOT_DIR}/admin-panel/apply-event-plan.mjs"
+
 bash "${ROOT_DIR}/scripts/start-db.sh"
 bash "${ROOT_DIR}/scripts/start-server.sh"
 bash "${ROOT_DIR}/admin-panel/start-panel.sh"

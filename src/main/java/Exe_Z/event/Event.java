@@ -24,6 +24,10 @@ import Exe_Z.util.Log;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -34,6 +38,9 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.Setter;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.JSONValue;
 
 public abstract class Event {
 
@@ -46,6 +53,7 @@ public abstract class Event {
     public static final int WOMENS_DAY = 6;
     public static final int SUMMER = 7;
     public static final int OFF = 8;
+    public static final int STAR_FESTIVAL = 9;
 
     public static final byte DOI_BANG_LUONG = 0;
     public static final byte DOI_BANG_XU = 1;
@@ -244,6 +252,31 @@ public abstract class Event {
 
     public int randomItemID() {
         return itemsThrownFromMonsters.next();
+    }
+
+    protected void loadMonsterDropTable(String eventKey, String sourcePath) {
+        Path overridePath = Paths.get("admin-panel", "data", "event-overrides", eventKey + ".json");
+        Path selectedPath = Files.exists(overridePath) ? overridePath : Paths.get(sourcePath);
+        try {
+            JSONArray rows = (JSONArray) JSONValue.parse(Files.readString(selectedPath));
+            if (rows == null) {
+                throw new IOException("Drop JSON không hợp lệ: " + selectedPath);
+            }
+            for (Object row : rows) {
+                JSONObject item = (JSONObject) row;
+                double percent = Double.parseDouble(item.get("percent").toString());
+                int id = Integer.parseInt(item.get("id").toString());
+                if (percent <= 0 || id < 0) {
+                    throw new IOException("Drop JSON có id hoặc percent không hợp lệ: " + selectedPath);
+                }
+                itemsThrownFromMonsters.add(percent, id);
+            }
+            if (Files.exists(overridePath)) {
+                Log.info("Đã nạp override drop event " + eventKey + " từ " + overridePath);
+            }
+        } catch (Exception ex) {
+            Log.error("Không thể nạp drop event " + eventKey + " từ " + selectedPath + ": " + ex.getMessage(), ex);
+        }
     }
 
     public abstract void action(Char p, int type, int amount);

@@ -28,6 +28,30 @@ Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong t
 
 Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java, không public MariaDB và không mô phỏng lệnh runtime không có contract SQL.
 
+## Event Control Center
+
+Mô-đun **Event Control** quản lý catalog event Java, lớp cấu hình, thời hạn dùng chung, preview `event_points`, bảng top và nguồn vật phẩm rơi. Panel không chuyển event nóng: thay vào đó nó lưu một **plan pending** có audit, và plan chỉ được launcher áp dụng trước lần Java khởi động tiếp theo.
+
+| Loại event | Panel có thể làm | Giới hạn |
+|---|---|---|
+| `json-drop` | Preview và lưu drop JSON vào plan; validator yêu cầu mọi `id` đã tồn tại trong bảng `item`. | Chỉ Java nạp override sau restart. |
+| `code-drop` | Hiển thị catalog, class, điểm/top và trạng thái cấu hình. | Không ghi đè công thức hard-code trong Java. |
+| `legacy` | Hiển thị cảnh báo ID chưa gán riêng. | Chỉ bật sau khi đã QA event trên bản sao dữ liệu. |
+| `safe-off` | Lưu plan tắt event bằng `Exe_Z.event.OFF`. | Không xóa lịch sử điểm event cũ. |
+
+Quy trình áp dụng có chủ đích là: chọn event và hạn kết thúc, xem lại drop JSON, nhập confirmation phrase `QUEUE EVENT TEN_EVENT`, sau đó dừng Java và khởi động lại:
+
+```bash
+bash scripts/stop-server.sh
+bash run-server.sh
+```
+
+`run-server.sh` tạo bản sao `config.properties` trong `admin-panel/data/event-control/config-backups/`, ghi config từ plan, ghi override JSON (nếu event hỗ trợ), rồi xóa plan pending sau khi thành công. Không có endpoint panel nào tự dừng hoặc hot-switch Java. Trên Windows, `scripts\windows-start-stack.cmd` cũng áp dụng pending plan trước khi mở Java.
+
+### Lễ hội Sao Đêm
+
+Event mới `Exe_Z.event.StarFestival` dùng event ID `9`, asset `item_roi/event_StarFestival/STAR_FESTIVAL.json` và cùng contract với event hiện có. Quái có thể rơi lồng đèn ngôi sao cùng các phần thưởng mặc định; người chơi đổi **10 lồng đèn ngôi sao** lấy **1 Huyền tinh ngọc**, đồng thời cộng điểm top `star_lantern`. Nó không thêm boss/map effect runtime mới, nên có thể bật bằng cơ chế pending apply mà không đòi hỏi hot-switch map.
+
 ## Database với quyền tối thiểu
 
 Lần đầu có thể dùng credential MariaDB local hiện có để tạo các bảng `panel_*` vận hành. Sau đó nên dùng user riêng; thay `nsoz` nếu database game dùng tên khác:
