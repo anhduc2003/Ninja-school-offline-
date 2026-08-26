@@ -24,6 +24,14 @@ Panel dùng session HttpOnly, SameSite=Strict, CSRF token, role-based access con
 
 Các view vận hành có dữ liệu thật gồm dashboard/health, người chơi, inventory JSON **chỉ đọc**, account status và ban, tiền tệ, item/shop/boss, gift code và lịch sử redemption, event points **chỉ đọc**, option rate/notify, leaderboard, analytics, incident/audit, backup, maintenance runbook và scheduler local. Vì lifecycle sự kiện, thông báo broadcast và nhiều cache nằm trong bộ nhớ Java, panel không giả vờ áp dụng các tác vụ đó live chỉ bằng SQL; các màn hình tương ứng nêu rõ khi cần restart/reload hoặc runbook thủ công.
 
+## Tạo account, vật phẩm và shop NPC
+
+Mô-đun **Tài khoản** tạo user game trong bảng `users` với bcrypt `$2y$`, tương thích helper `StringUtils.checkPassword` của Java Ninja. Username chỉ nhận 3–30 ký tự chữ, số hoặc `_`; mật khẩu game phải dài 8–100 ký tự. Mật khẩu không xuất hiện trong audit hay response UI. Việc tạo account có confirmation phrase và chỉ role `moderator` trở lên được thực hiện.
+
+Mô-đun **Vật phẩm tùy biến** tạo/chỉnh catalog `item` với các field có trong schema: name, type, gender, description, level, icon, part, fashion và `isUpToUp`. Mô-đun **Cửa hàng** vẫn quản lý `shopcoin_tb1`, đồng thời quản lý catalog `stores` và hàng `store_data` cho shop NPC, gồm item template, sys, trạng thái khóa, giá coin/lượng/yên, expire và options JSON array. Tất cả create/update/delete đều có RBAC, CSRF, confirmation phrase và audit append-only.
+
+> `StoreManager` và item catalog được Java tải vào memory. Sau khi đổi item, `stores` hoặc `store_data`, hãy thực hiện reload/restart Java theo runbook đã duyệt trước khi coi thay đổi đã áp dụng cho người chơi online. Panel SQL-only không tự chạy lệnh reload runtime.
+
 ## MariaDB local với quyền tối thiểu
 
 Mẫu cấu hình mặc định tương thích máy game cũ (`root` không mật khẩu) để bootstrap lần đầu, nhưng **không nên dùng root lâu dài**. Sau khi panel đã tạo các bảng `panel_*` ở lần đầu khởi động, đăng nhập MariaDB local và tạo một user riêng. Thay `USE nsoz` nếu bạn đã đổi tên database game.

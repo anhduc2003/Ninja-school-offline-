@@ -8,6 +8,7 @@ import net from "node:net";
 import mysql from "mysql2/promise";
 import { hashPassword, hasRole, randomToken, tokenHash, verifyPassword } from "./lib/security.mjs";
 import { availableColumns } from "./lib/schema.mjs";
+import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -19,17 +20,18 @@ const FIRST_LOGIN_PATH = join(DATA_DIR, "first-login.txt");
 const MAX_BODY_SIZE = 1_000_000;
 const SESSION_COOKIE = "nso_admin_session";
 const tableColumnsCache = new Map();
+const autoIncrementCache = new Map();
 const modules = [
   ["dashboard", "Tổng quan", "Vận hành", "Sức khỏe game, MariaDB, port 14444 và hoạt động gần đây", "analyst"],
   ["players", "Người chơi", "Người chơi", "Tìm kiếm nhân vật, trạng thái online, map, level và tài sản", "analyst"],
-  ["accounts", "Tài khoản", "Người chơi", "Tra cứu, lock, unlock, ban và kích hoạt tài khoản", "moderator"],
+  ["accounts", "Tài khoản", "Người chơi", "Tạo account game, tra cứu, lock, unlock, ban và kích hoạt", "moderator"],
   ["moderation", "Kiểm duyệt", "An toàn", "Ban có thời hạn và account status với audit; không giả lập kick/mute runtime", "moderator"],
   ["inventory", "Túi đồ", "Kinh tế", "Đọc JSON bag/box/equipped an toàn; ghi inventory bị chặn để tránh desync", "operator"],
   ["currency", "Tiền tệ", "Kinh tế", "Lượng, coin, xu, yên với transaction và xác nhận", "operator"],
   ["rewards", "Phần thưởng", "Kinh tế", "Gift code, reward delivery và theo dõi lịch sử", "operator"],
   ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
-  ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Chỉnh metadata item có validation", "operator"],
-  ["shop", "Cửa hàng", "Nội dung", "Giá, nâng cấp, hệ và options shopcoin", "operator"],
+  ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Tạo và chỉnh catalog item có validation", "operator"],
+  ["shop", "Cửa hàng", "Nội dung", "Shopcoin và hàng hóa NPC từ stores/store_data", "operator"],
   ["events", "Sự kiện", "Nội dung", "Đọc event point/reward state; lifecycle runtime không tự động hóa", "operator"],
   ["rates", "Tỷ lệ game", "Nội dung", "EXP, level rate và option có phê duyệt", "admin"],
   ["bosses", "Quái & Boss", "Nội dung", "Metadata quái, boss, HP và bản đồ spawn", "operator"],
@@ -77,6 +79,18 @@ async function tableColumns(tableName) {
     tableColumnsCache.set(tableName, new Set(rows.map(row => row.column_name)));
   }
   return tableColumnsCache.get(tableName);
+}
+
+async function hasAutoIncrementId(tableName) {
+  if (!/^[a-z_]+$/.test(tableName)) throw new Error("Tên bảng schema không hợp lệ.");
+  if (!autoIncrementCache.has(tableName)) {
+    const [rows] = await pool.query(
+      "SELECT extra FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'id' LIMIT 1",
+      [tableName],
+    );
+    autoIncrementCache.set(tableName, String(rows[0]?.extra || "").toLowerCase().includes("auto_increment"));
+  }
+  return autoIncrementCache.get(tableName);
 }
 
 async function ensureSchema() {
@@ -366,6 +380,18 @@ async function api(req, res, url) {
     const [rows] = await pool.query("SELECT s.id, s.idItem, i.name AS itemName, s.price, s.upgrade, s.system, s.options FROM shopcoin_tb1 s LEFT JOIN item i ON i.id = s.idItem ORDER BY s.id LIMIT 200");
     writeJson(res, 200, { rows }); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/npc-shops") {
+    if (!requireUser(user, res, "analyst")) return;
+    const requestedStore = url.searchParams.get("storeId");
+    const storeId = requestedStore ? Number(requestedStore) : null;
+    if (storeId !== null && (!Number.isInteger(storeId) || storeId < 0)) throw new Error("storeId không hợp lệ.");
+    const [stores, npcs, rows] = await Promise.all([
+      pool.query("SELECT id, name FROM stores ORDER BY id"),
+      pool.query("SELECT id, name, head, body, leg, menu FROM npc ORDER BY id LIMIT 150"),
+      pool.query(`SELECT sd.id, sd.item_id, i.name AS item_name, sd.sys, sd.store, st.name AS store_name, sd.\`lock\`, sd.coin, sd.gold, sd.yen, sd.expire, sd.options FROM store_data sd JOIN stores st ON st.id = sd.store LEFT JOIN item i ON i.id = sd.item_id ${storeId === null ? "" : "WHERE sd.store = ?"} ORDER BY sd.store, sd.id LIMIT 400`, storeId === null ? [] : [storeId]),
+    ]);
+    writeJson(res, 200, { stores: stores[0], npcs: npcs[0], rows: rows[0], reloadRequired: true }); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/monsters") {
     if (!requireUser(user, res, "analyst")) return;
     const boss = url.searchParams.get("boss") === "1" ? 1 : 0;
@@ -479,6 +505,17 @@ async function api(req, res, url) {
     await audit(user, "accounts", "account.status.updated", "user", String(id), "success", { status });
     writeJson(res, 200, { ok: true }); return;
   }
+  if (req.method === "POST" && url.pathname === "/api/actions/account-create") {
+    if (!requireUser(user, res, "moderator")) return;
+    const body = await readJson(req); const username = String(body.username || "").trim(); const password = String(body.password || "");
+    if (!validateGameUsername(username) || password.length < 8 || password.length > 100 || body.confirmation !== `CREATE ACCOUNT ${username}`) throw new Error("Username cần 3-30 ký tự chữ/số/gạch dưới; mật khẩu cần 8-100 ký tự; hoặc mã xác nhận không hợp lệ.");
+    const [existing] = await pool.query("SELECT id FROM users WHERE username = ? LIMIT 1", [username]);
+    if (existing[0]) throw new Error("Username đã tồn tại.");
+    const passwordHash = await hashGamePassword(password);
+    const [result] = await pool.query("INSERT INTO users (username, password, status, activated, online, luong, coin) VALUES (?, ?, 1, 0, 0, 0, 0)", [username, passwordHash]);
+    await audit(user, "accounts", "account.created", "user", String(result.insertId), "success", { username });
+    writeJson(res, 200, { ok: true, id: result.insertId, username, gamePasswordHash: "bcrypt-$2y$" }); return;
+  }
   if (req.method === "POST" && url.pathname === "/api/actions/account-ban") {
     if (!requireUser(user, res, "moderator")) return;
     const body = await readJson(req); const id = Number(body.userId); const banUntil = new Date(body.banUntil);
@@ -524,6 +561,41 @@ async function api(req, res, url) {
     await audit(user, "shop", "shop.updated", "shop_item", String(id), "success", { price, upgrade, system });
     writeJson(res, 200, { ok: true, reloadRequired: true }); return;
   }
+  if (req.method === "POST" && url.pathname === "/api/actions/store-create") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const name = String(body.name || "").trim().slice(0, 500);
+    if (!name || body.confirmation !== "CREATE NPC STORE") throw new Error("Tên store hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("INSERT INTO stores (name) VALUES (?)", [name]);
+    await audit(user, "shop", "npc_store.created", "store", String(result.insertId), "success", { name });
+    writeJson(res, 200, { ok: true, id: result.insertId, reloadRequired: true }); return;
+  }
+  if (req.method === "POST" && ["/api/actions/npc-shop-item-create", "/api/actions/npc-shop-item-update"].includes(url.pathname)) {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const id = Number(body.id); const itemId = Number(body.itemId); const storeId = Number(body.storeId); const sys = Number(body.sys); const lock = Number(body.lock); const coin = Number(body.coin); const gold = Number(body.gold); const yen = Number(body.yen); const expire = Number(body.expire);
+    let options; try { const parsed = JSON.parse(body.options || "[]"); if (!Array.isArray(parsed)) throw new Error(); options = JSON.stringify(parsed); } catch { throw new Error("Options phải là JSON array hợp lệ."); }
+    const isUpdate = url.pathname.endsWith("-update"); const phrase = isUpdate ? `APPLY NPC SHOP ITEM ${id}` : `ADD NPC SHOP ITEM ${storeId}`;
+    if (![itemId, storeId, sys, lock, coin, gold, yen, expire].every(Number.isSafeInteger) || (isUpdate && (!Number.isInteger(id) || id < 1)) || itemId < 0 || storeId < 0 || ![0, 1].includes(lock) || Math.min(coin, gold, yen) < 0 || expire < -1 || body.confirmation !== phrase) throw new Error("Dữ liệu hàng hóa NPC hoặc mã xác nhận không hợp lệ.");
+    const [[itemRows], [storeRows]] = await Promise.all([pool.query("SELECT id FROM item WHERE id = ? LIMIT 1", [itemId]), pool.query("SELECT id FROM stores WHERE id = ? LIMIT 1", [storeId])]);
+    if (!itemRows[0] || !storeRows[0]) throw new Error("Item template hoặc store không tồn tại.");
+    if (!isUpdate) {
+      const [result] = await pool.query("INSERT INTO store_data (item_id, sys, store, `lock`, coin, gold, yen, expire, options) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [itemId, sys, storeId, lock, coin, gold, yen, expire, options]);
+      await audit(user, "shop", "npc_store_item.created", "store_data", String(result.insertId), "success", { itemId, storeId, sys, lock, coin, gold, yen, expire });
+      writeJson(res, 200, { ok: true, id: result.insertId, reloadRequired: true }); return;
+    }
+    const [result] = await pool.query("UPDATE store_data SET item_id = ?, sys = ?, store = ?, `lock` = ?, coin = ?, gold = ?, yen = ?, expire = ?, options = ? WHERE id = ? LIMIT 1", [itemId, sys, storeId, lock, coin, gold, yen, expire, options, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy hàng hóa NPC.");
+    await audit(user, "shop", "npc_store_item.updated", "store_data", String(id), "success", { itemId, storeId, sys, lock, coin, gold, yen, expire });
+    writeJson(res, 200, { ok: true, reloadRequired: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/npc-shop-item-delete") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `DELETE NPC SHOP ITEM ${id}`) throw new Error("Hàng hóa NPC hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("DELETE FROM store_data WHERE id = ? LIMIT 1", [id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy hàng hóa NPC.");
+    await audit(user, "shop", "npc_store_item.deleted", "store_data", String(id), "success");
+    writeJson(res, 200, { ok: true, reloadRequired: true }); return;
+  }
   if (req.method === "POST" && url.pathname === "/api/actions/monster-update") {
     if (!requireUser(user, res, "operator")) return;
     const body = await readJson(req); const id = Number(body.id); const level = Number(body.level); const hp = Number(body.hp); const boss = Number(body.boss);
@@ -535,12 +607,36 @@ async function api(req, res, url) {
   }
   if (req.method === "POST" && url.pathname === "/api/actions/item-update") {
     if (!requireUser(user, res, "operator")) return;
-    const body = await readJson(req); const id = Number(body.id); const level = Number(body.level); const icon = Number(body.icon);
+    const body = await readJson(req); const id = Number(body.id); const type = Number(body.type); const gender = Number(body.gender); const level = Number(body.level); const icon = Number(body.icon); const part = Number(body.part); const fashion = Number(body.fashion); const isUpToUp = Number(body.isUpToUp);
     const name = String(body.name || "").trim().slice(0, 500); const description = String(body.description || "").trim().slice(0, 500);
-    if (![id, level, icon].every(Number.isInteger) || !name || body.confirmation !== `APPLY ITEM ${id}`) throw new Error("Dữ liệu item không hợp lệ.");
-    await pool.query("UPDATE item SET name = ?, description = ?, level = ?, icon = ? WHERE id = ? LIMIT 1", [name, description, level, icon, id]);
-    await audit(user, "custom-items", "item.updated", "item", String(id), "success", { name, level, icon });
+    if (![id, type, gender, level, icon, part, fashion, isUpToUp].every(Number.isInteger) || !name || type < 0 || type > 255 || ![-1, 0, 1, 2].includes(gender) || level < 0 || level > 1000 || icon < 0 || icon > 100000 || part < -1 || part > 100000 || fashion < -1 || fashion > 100000 || ![0, 1].includes(isUpToUp) || body.confirmation !== `APPLY ITEM ${id}`) throw new Error("Dữ liệu item không hợp lệ.");
+    const [result] = await pool.query("UPDATE item SET name = ?, type = ?, gender = ?, description = ?, level = ?, icon = ?, part = ?, fashion = ?, isUpToUp = ? WHERE id = ? LIMIT 1", [name, type, gender, description, level, icon, part, fashion, isUpToUp, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy item cần cập nhật.");
+    await audit(user, "custom-items", "item.updated", "item", String(id), "success", { name, type, gender, level, icon, part, fashion, isUpToUp });
     writeJson(res, 200, { ok: true, reloadRequired: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/item-create") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const name = String(body.name || "").trim().slice(0, 500); const description = String(body.description || "").trim().slice(0, 500);
+    const type = Number(body.type); const gender = Number(body.gender); const level = Number(body.level); const icon = Number(body.icon); const part = Number(body.part); const fashion = Number(body.fashion); const isUpToUp = Number(body.isUpToUp);
+    if (!name || ![type, gender, level, icon, part, fashion, isUpToUp].every(Number.isInteger) || type < 0 || type > 255 || ![-1, 0, 1, 2].includes(gender) || level < 0 || level > 1000 || icon < 0 || icon > 100000 || part < -1 || part > 100000 || fashion < -1 || fashion > 100000 || ![0, 1].includes(isUpToUp) || body.confirmation !== "CREATE ITEM") throw new Error("Metadata item hoặc mã xác nhận không hợp lệ.");
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const autoIncrement = await hasAutoIncrementId("item");
+      let id;
+      if (autoIncrement) {
+        const [result] = await conn.query("INSERT INTO item (name, type, gender, description, level, icon, part, fashion, isUpToUp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [name, type, gender, description, level, icon, part, fashion, isUpToUp]);
+        id = result.insertId;
+      } else {
+        const [nextRows] = await conn.query("SELECT COALESCE(MAX(id), -1) + 1 AS next_id FROM item FOR UPDATE");
+        id = Number(nextRows[0]?.next_id);
+        await conn.query("INSERT INTO item (id, name, type, gender, description, level, icon, part, fashion, isUpToUp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [id, name, type, gender, description, level, icon, part, fashion, isUpToUp]);
+      }
+      await conn.commit();
+      await audit(user, "custom-items", "item.created", "item", String(id), "success", { name, type, gender, level, icon, part, fashion, isUpToUp });
+      writeJson(res, 200, { ok: true, id, reloadRequired: true }); return;
+    } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
   }
   if (req.method === "POST" && url.pathname === "/api/actions/option-update") {
     if (!requireUser(user, res, "admin")) return;

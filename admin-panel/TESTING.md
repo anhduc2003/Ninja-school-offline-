@@ -6,6 +6,12 @@ The local panel at `http://127.0.0.1:18080` rendered the dark Ninja Control Room
 
 The expanded desktop navigation rendered all 23 grouped modules. The inventory screen rendered its player-ID control and an explicit read-only/desynchronization warning before any player data is requested; no inventory mutation control is exposed.
 
+After the account/item/shop-NPC extension, the local desktop panel rendered the account-creation form in the existing control-room layout. It exposed username, game-password confirmation and a confirmation-gated submit action, while account lookup remained separately available. The visible critical TCP 14444 alert remains expected in the fixture because the Java game process is intentionally not running there.
+
+The account form was reloaded after a label correction. Its username rule now renders in Vietnamese as “3-30; chữ, số hoặc _”, and the three inputs plus confirmation-gated submit button retain their desktop layout.
+
+The local MariaDB fixture E2E test created a game account and confirmed a `$2y$` bcrypt prefix, created an item, performed a full metadata update (type, gender, description, level, icon, part, fashion and `isUpToUp`), created a NPC store and a `store_data` row, updated it, read it through the panel API, then deleted it. Fixture records were removed after each test path.
+
 ## Automated checks
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.
