@@ -70,7 +70,7 @@ Event mới `Exe_Z.event.StarFestival` dùng event ID `9`, asset `item_roi/event
 
 ## Gift Code Control Center
 
-Gift Code Control Center quản lý mã, phạm vi server, tiền tệ, reward nhiều vật phẩm, option chỉ số, khóa item, upgrade, thời hạn reward, thời điểm bắt đầu/kết thúc, quota tổng, tắt/bật thủ công và lịch sử đổi. **Java là nguồn quyết định**: khi người chơi nhập code, server kiểm tra lifecycle và tăng bộ đếm trong transaction có row lock. Vì vậy code tự đến lịch hoặc hết hạn ngay cả khi panel đang tắt; không có scheduler hoặc thao tác hot-switch nào cần chạy nền.
+Gift Code Control Center quản lý mã, phạm vi server, tiền tệ, reward nhiều vật phẩm, option chỉ số, khóa item, upgrade, thời hạn reward, thời điểm bắt đầu/kết thúc, quota tổng, tắt/bật thủ công và lịch sử đổi. Trình tạo mới đi theo **bốn bước**: mã/phạm vi, lịch/quota theo preset, reward từ catalog và rà soát. Mã có thể tạo tự động; item được tìm/chọn theo tên; option thêm theo từng dòng, vì vậy không cần nhập item ID, server ID hoặc Options JSON trong luồng thông thường. **Java là nguồn quyết định**: khi người chơi nhập code, server kiểm tra lifecycle và tăng bộ đếm trong transaction có row lock. Vì vậy code tự đến lịch hoặc hết hạn ngay cả khi panel đang tắt; không có scheduler hoặc thao tác hot-switch nào cần chạy nền.
 
 | Cơ chế | Hành vi runtime |
 |---|---|
@@ -90,7 +90,7 @@ bash run-server.sh
 
 Migration chỉ bổ sung `starts_at`, `max_redemptions`, `redemption_count`, `disabled` và index vào `gift_codes`; không xóa code, reward hoặc lịch sử đổi. Nếu auto-migration lỗi, xem `tail -n 50 logs/gift-code-migration.log`. Sau đó panel user quyền tối thiểu chỉ cần `SELECT, INSERT, UPDATE, DELETE`; không cần quyền ALTER ở các lần khởi động thường khi schema đã sẵn sàng.
 
-Reward item được canonicalize trước khi lưu: item ID phải tồn tại trong bảng `item`, option có dạng `[[optionId,value]]` và option ID phải có trong `item_option`. Không thể sửa reward/lifecycle hay xóa code đã có redemption; hãy tắt code cũ và tạo code mới để audit/lịch sử đổi không bị sai lệch.
+Reward item được canonicalize trước khi lưu: item phải tồn tại trong bảng `item`, còn mọi option được builder chuyển thành cặp `[[optionId,value]]` sau khi chọn từ catalog `item_option`. Không thể sửa reward/lifecycle hay xóa code đã có redemption; hãy tắt code cũ và tạo code mới để audit/lịch sử đổi không bị sai lệch.
 
 ## Database với quyền tối thiểu
 
