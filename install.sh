@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.0.1}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.0.2}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
@@ -60,7 +60,7 @@ mkdir -p "${INSTALL_DIR}/.termux"
 printf '%s\n' "${RELEASE_VERSION}" > "${INSTALL_DIR}/.termux/release-installed"
 
 cd "${INSTALL_DIR}"
-chmod +x scripts/*.sh
+chmod +x run-server.sh scripts/*.sh
 mkdir -p .termux logs
 
 printf '%s\n' '[3/6] Tạo cấu hình server nếu chưa có...'
@@ -82,6 +82,7 @@ printf '\n%s\n' '============================================='
 printf '%s\n' 'CÀI ĐẶT VÀ KHỞI ĐỘNG HOÀN TẤT'
 printf '%s\n' "Thư mục: ${INSTALL_DIR}"
 printf '%s\n' 'Cổng game: 14444'
-printf '%s\n' 'Xem log: tail -f logs/server.log'
-printf '%s\n' 'Dừng server: bash scripts/stop-server.sh'
+printf '%s\n' "Chạy server game: bash ${INSTALL_DIR}/run-server.sh"
+printf '%s\n' "Xem log: tail -f ${INSTALL_DIR}/logs/server.log"
+printf '%s\n' "Dừng server: bash ${INSTALL_DIR}/scripts/stop-server.sh"
 printf '%s\n' '============================================='

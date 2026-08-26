@@ -12,6 +12,7 @@ Repository này chứa phần mã nguồn server Java của Ninja School Offline
 | `item_roi/` | Các cấu hình vật phẩm theo sự kiện |
 | `config.properties.example` | Cấu hình mẫu, không chứa mật khẩu cá nhân |
 | `install.sh` | Bootstrap toàn bộ quá trình cài đặt và khởi động bằng một lệnh |
+| `run-server.sh` | Khởi động MariaDB và game server bằng một lệnh |
 | `scripts/` | Script cài đặt, khởi động database, build/chạy và dừng server |
 | `pom.xml` | Cấu hình Maven; đã cập nhật Lombok/compiler để build được với JDK 17 hoặc 21 |
 
@@ -71,15 +72,21 @@ bash scripts/init-db.sh
 
 Script sẽ khởi động MariaDB, tạo database `nsoz` nếu chưa tồn tại và import `SQL/nsoz.sql` **chỉ khi database chưa có bảng**. Khi database đã có bảng, script bỏ qua import để tránh ghi đè dữ liệu người chơi. Vì vậy, trước khi import vào database đang sử dụng, hãy sao lưu dữ liệu nếu cần. Bản SQL trong repository đã loại tài khoản `admin` mẫu có mật khẩu rõ ràng từ archive gốc; hãy tạo tài khoản riêng qua quy trình đăng ký/web hiện có hoặc công cụ quản trị của bạn, rồi đặt mật khẩu mạnh.
 
-## Build và chạy server
+## Lệnh chạy server game
 
-Khởi động server bằng:
+Sau khi cài đặt xong, dùng lệnh sau để khởi động cả MariaDB và game server:
 
 ```bash
-bash scripts/start-server.sh
+bash ~/Ninja-school-offline-/run-server.sh
 ```
 
-Lệnh này sẽ tự chạy `mvn -DskipTests package` nếu chưa có `target/Nso-jar-with-dependencies.jar`, sau đó chạy server với chế độ **headless** để không tạo cửa sổ Swing. Log nằm tại `logs/server.log` và PID nằm tại `.termux/server.pid`.
+Nếu đang đứng trong thư mục dự án, có thể dùng:
+
+```bash
+bash run-server.sh
+```
+
+Launcher sẽ tự kiểm tra MariaDB, build JAR nếu chưa có, rồi chạy server ở chế độ **headless** để không tạo cửa sổ Swing. Log nằm tại `~/Ninja-school-offline-/logs/server.log` và PID nằm tại `~/Ninja-school-offline-/.termux/server.pid`.
 
 Theo dõi log:
 
@@ -90,7 +97,7 @@ tail -f logs/server.log
 Mặc định server lắng nghe cổng `14444`. Nếu cần giảm hoặc tăng heap JVM theo RAM điện thoại, đặt `JAVA_OPTS` trước khi chạy, ví dụ:
 
 ```bash
-JAVA_OPTS='-Xms128m -Xmx512m' bash scripts/start-server.sh
+JAVA_OPTS='-Xms128m -Xmx512m' bash run-server.sh
 ```
 
 Dừng server bằng:
