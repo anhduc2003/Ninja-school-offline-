@@ -8,9 +8,15 @@ SOCKET="${MYSQL_RUN}/mysqld.sock"
 DB_NAME="${DB_NAME:-nsoz}"
 DB_USER="${DB_USER:-root}"
 
+if [[ ! "${DB_NAME}" =~ ^[A-Za-z0-9_]+$ ]]; then
+  printf '%s\n' "Tên database không hợp lệ: ${DB_NAME}. Chỉ dùng chữ cái, số và dấu gạch dưới." >&2
+  exit 1
+fi
+
 "${ROOT_DIR}/scripts/start-db.sh"
 
-mariadb --defaults-file="${ROOT_DIR}/.termux/mariadb.cnf" --socket="${SOCKET}" -u"${DB_USER}" -e "CREATE DATABASE IF NOT EXISTS \\`${DB_NAME}\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+CREATE_DATABASE_SQL="CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mariadb --defaults-file="${ROOT_DIR}/.termux/mariadb.cnf" --socket="${SOCKET}" -u"${DB_USER}" -e "${CREATE_DATABASE_SQL}"
 
 TABLE_COUNT="$(mariadb --defaults-file="${ROOT_DIR}/.termux/mariadb.cnf" --socket="${SOCKET}" -N -B -u"${DB_USER}" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}';")"
 if [ "${TABLE_COUNT}" -eq 0 ]; then
