@@ -30,7 +30,6 @@ cat > "${MYSQL_CNF}" <<EOF
 socket=${MYSQL_RUN}/mysqld.sock
 
 [mysqld]
-basedir=${PREFIX}
 datadir=${MYSQL_DATA}
 socket=${MYSQL_RUN}/mysqld.sock
 pid-file=${ROOT_DIR}/.termux/mariadb.pid
@@ -59,7 +58,6 @@ if [ ! -d "${MYSQL_DATA}/mysql" ]; then
   printf '%s\n' '==> Khởi tạo thư mục dữ liệu MariaDB (feedback=OFF, native AIO=OFF)'
   mariadb-install-db \
     --defaults-file="${MYSQL_CNF}" \
-    --basedir="${PREFIX}" \
     --datadir="${MYSQL_DATA}" \
     --auth-root-authentication-method=normal
   touch "${INIT_MARKER}"
