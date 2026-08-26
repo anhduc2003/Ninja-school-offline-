@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import net from "node:net";
 import mysql from "mysql2/promise";
-import { hashPassword, hasRole, randomToken, tokenHash, verifyPassword } from "./lib/security.mjs";
+import { randomToken } from "./lib/security.mjs";
 import { availableColumns } from "./lib/schema.mjs";
-import { hashGamePassword, validateGameUsername, verifyGamePassword } from "./lib/game-account.mjs";
+import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 import { existingItemIds, validateInventory, validatePlayerStats } from "./lib/player-state.mjs";
 import { resolveBootstrapPassword } from "./lib/bootstrap-password.mjs";
 
@@ -21,9 +21,9 @@ const PUBLIC_DIR = join(__dirname, "public");
 const CONFIG_PATH = join(__dirname, "config.local.json");
 const FIRST_LOGIN_PATH = join(DATA_DIR, "first-login.txt");
 const MAX_BODY_SIZE = 1_000_000;
-const SESSION_COOKIE = "nso_admin_session";
-const GAME_USER_MODEL_TYPE = "App\\Modules\\User\\Models\\User";
-const GAME_ADMIN_ROLE_ID = 1;
+const LOCAL_BIND_HOST = "127.0.0.1";
+const LOCAL_CSRF_TOKEN = randomToken();
+const LOCAL_ACTOR = Object.freeze({ id: 0, username: "local-only", role: "admin", authSource: "local-only", csrfToken: LOCAL_CSRF_TOKEN });
 const tableColumnsCache = new Map();
 const autoIncrementCache = new Map();
 const modules = [
@@ -49,7 +49,7 @@ const modules = [
   ["leaderboards", "Bảng xếp hạng", "Phân tích", "Danh sách top và refresh reference", "analyst"],
   ["analytics", "Phân tích", "Phân tích", "KPI player, economy và báo cáo vận hành", "analyst"],
   ["jobs", "Tác vụ định kỳ", "Kiểm soát", "Health check, cleanup, report và transition đã phê duyệt", "admin"],
-  ["security", "Bảo mật tài khoản", "Kiểm soát", "Đổi mật khẩu panel local và thu hồi session", "viewer"],
+  ["security", "Chế độ local-only", "Kiểm soát", "Không có đăng nhập; panel chỉ lắng nghe trên chính thiết bị", "viewer"],
 ].map(([id, label, group, description, role]) => ({ id, label, group, description, role }));
 
 function readGameProperties() {
@@ -123,52 +123,8 @@ async function hasAutoIncrementId(tableName) {
   return autoIncrementCache.get(tableName);
 }
 
-async function panelAdminUserColumns() {
-  const [rows] = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'panel_admin_users'");
-  return new Set(rows.map(row => row.column_name));
-}
-
-async function migratePanelAuthSchema() {
-  const panelColumnNames = await panelAdminUserColumns();
-  if (!panelColumnNames.has("auth_source")) await pool.query("ALTER TABLE panel_admin_users ADD COLUMN auth_source ENUM('panel','game') NOT NULL DEFAULT 'panel' AFTER active");
-  if (!panelColumnNames.has("game_user_id")) await pool.query("ALTER TABLE panel_admin_users ADD COLUMN game_user_id BIGINT NULL UNIQUE AFTER auth_source");
-}
-
-async function assertGameAdminAuthReady() {
-  const [tables] = await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('users', 'model_has_roles', 'panel_admin_users')");
-  const tableNames = new Set(tables.map(row => row.table_name));
-  const missingTables = ["users", "model_has_roles", "panel_admin_users"].filter(tableName => !tableNames.has(tableName));
-  if (missingTables.length) {
-    throw new Error(`Thiếu bảng cho đăng nhập game-admin: ${missingTables.join(", ")}. Hãy hoàn tất import nsoz.sql và bootstrap panel trước.`);
-  }
-  const columns = await panelAdminUserColumns();
-  const missingColumns = ["auth_source", "game_user_id"].filter(column => !columns.has(column));
-  if (missingColumns.length) {
-    throw new Error(`Panel cần migration game-admin (${missingColumns.join(", ")}). Chạy một lần: ./scripts/migrate-panel-auth.sh, rồi khởi động lại panel.`);
-  }
-}
-
 async function ensureSchema() {
   const statements = [
-    `CREATE TABLE IF NOT EXISTS panel_admin_users (
-      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      username VARCHAR(64) NOT NULL UNIQUE,
-      password_hash VARCHAR(255) NOT NULL,
-      role ENUM('viewer','analyst','moderator','operator','admin') NOT NULL DEFAULT 'viewer',
-      active TINYINT(1) NOT NULL DEFAULT 1,
-      auth_source ENUM('panel','game') NOT NULL DEFAULT 'panel',
-      game_user_id BIGINT NULL UNIQUE,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-    `CREATE TABLE IF NOT EXISTS panel_sessions (
-      token_hash CHAR(64) NOT NULL PRIMARY KEY,
-      user_id INT NOT NULL,
-      csrf_token VARCHAR(96) NOT NULL,
-      expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX panel_sessions_expiry_idx (expires_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS panel_audit_events (
       id CHAR(36) NOT NULL PRIMARY KEY,
       actor_id INT NULL,
@@ -244,84 +200,11 @@ async function ensureSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   ];
   for (const statement of statements) await pool.query(statement);
-  await migratePanelAuthSchema();
-  const [admins] = await pool.query("SELECT id FROM panel_admin_users WHERE role = 'admin' LIMIT 1");
-  if (admins.length === 0) {
-    const password = resolveBootstrapPassword(process.env.NSO_PANEL_ADMIN_PASSWORD);
-    await pool.query("INSERT INTO panel_admin_users (username, password_hash, role) VALUES (?, ?, 'admin')", ["admin", hashPassword(password)]);
-    writeFileSync(FIRST_LOGIN_PATH, `Ninja School Offline panel\nUsername: admin\nPassword: ${password}\n\nCẢNH BÁO: Mật khẩu bootstrap mặc định rất yếu. Đổi mật khẩu ngay sau lần đăng nhập đầu tiên.\n`, { mode: 0o600 });
-    console.log(`Panel admin bootstrap created. Credentials saved to ${FIRST_LOGIN_PATH}`);
-  }
-}
-
-function setCookie(res, value, maxAge = config.sessionHours * 3600) {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
-}
-
-function clearCookie(res) {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
-}
-
-function parseCookies(req) {
-  return Object.fromEntries((req.headers.cookie || "").split(";").map(pair => pair.trim().split("=")).filter(pair => pair[0]));
 }
 
 async function getSessionUser(req) {
-  const rawToken = parseCookies(req)[SESSION_COOKIE];
-  if (!rawToken) return null;
-  const [rows] = await pool.query(
-    `SELECT u.id, COALESCE(game_user.username, u.username) AS username, u.role, u.auth_source AS authSource, u.game_user_id AS gameUserId, s.csrf_token AS csrfToken
-     FROM panel_sessions s JOIN panel_admin_users u ON u.id = s.user_id
-     LEFT JOIN users game_user ON game_user.id = u.game_user_id
-     WHERE s.token_hash = ? AND s.expires_at > NOW() AND u.active = 1
-       AND (u.auth_source = 'panel' OR (
-         game_user.status = 1
-         AND (game_user.ban_until IS NULL OR game_user.ban_until <= NOW())
-         AND EXISTS (SELECT 1 FROM model_has_roles mr WHERE mr.model_id = game_user.id AND mr.model_type = ? AND mr.role_id = ?)
-       ))
-     LIMIT 1`,
-    [tokenHash(rawToken), GAME_USER_MODEL_TYPE, GAME_ADMIN_ROLE_ID],
-  );
-  return rows[0] || null;
-}
-
-async function findGameAccount(username) {
-  const [rows] = await pool.query(
-    `SELECT u.id, u.username, u.password, u.status, u.ban_until,
-      EXISTS (SELECT 1 FROM model_has_roles mr WHERE mr.model_id = u.id AND mr.model_type = ? AND mr.role_id = ?) AS is_game_admin
-     FROM users u WHERE u.username = ? LIMIT 1`,
-    [GAME_USER_MODEL_TYPE, GAME_ADMIN_ROLE_ID, username],
-  );
-  return rows[0] || null;
-}
-
-function gameAdminEligible(gameUser) {
-  return Boolean(gameUser && Number(gameUser.is_game_admin) === 1 && Number(gameUser.status) === 1 && (!gameUser.ban_until || new Date(gameUser.ban_until).getTime() <= Date.now()));
-}
-
-async function syncGameAdminPrincipal(gameUser) {
-  const [existing] = await pool.query("SELECT id FROM panel_admin_users WHERE game_user_id = ? LIMIT 1", [gameUser.id]);
-  if (existing[0]) {
-    await pool.query("UPDATE panel_admin_users SET role = 'admin', active = 1, auth_source = 'game', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [existing[0].id]);
-  } else {
-    const [sameUsername] = await pool.query("SELECT id FROM panel_admin_users WHERE username = ? LIMIT 1", [gameUser.username]);
-    const principalUsername = sameUsername[0] ? `game:${gameUser.id}` : gameUser.username;
-    await pool.query(
-      "INSERT INTO panel_admin_users (username, password_hash, role, active, auth_source, game_user_id) VALUES (?, '', 'admin', 1, 'game', ?)",
-      [principalUsername, gameUser.id],
-    );
-  }
-  const [rows] = await pool.query("SELECT id, username, role, auth_source AS authSource, game_user_id AS gameUserId FROM panel_admin_users WHERE game_user_id = ? LIMIT 1", [gameUser.id]);
-  if (!rows[0]) throw new Error("Không thể đồng bộ principal quản trị game.");
-  return { ...rows[0], username: gameUser.username };
-}
-
-async function createPanelSession(principal) {
-  const token = randomToken();
-  const csrf = randomToken();
-  await pool.query("DELETE FROM panel_sessions WHERE expires_at <= NOW()");
-  await pool.query("INSERT INTO panel_sessions (token_hash, user_id, csrf_token, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))", [tokenHash(token), principal.id, csrf, Number(config.sessionHours) * 3600]);
-  return { token, csrf };
+  void req;
+  return LOCAL_ACTOR;
 }
 
 function writeJson(res, status, body) {
@@ -339,7 +222,8 @@ async function readJson(req) {
 }
 
 function assertCsrf(req, user) {
-  if (req.headers["x-nso-csrf"] !== user.csrfToken) throw new Error("CSRF token không hợp lệ.");
+  void user;
+  if (req.headers["x-nso-csrf"] !== LOCAL_CSRF_TOKEN) throw new Error("CSRF token local không hợp lệ. Hãy tải lại Control Room.");
 }
 
 async function audit(user, module, action, resourceType, resourceId, outcome, metadata = {}) {
@@ -410,8 +294,7 @@ async function dashboardData() {
 }
 
 function requireUser(user, res, role = "viewer") {
-  if (!user) { writeJson(res, 401, { error: "Bạn cần đăng nhập panel." }); return false; }
-  if (!hasRole(user, role)) { writeJson(res, 403, { error: "Vai trò hiện tại không đủ quyền." }); return false; }
+  void user; void res; void role;
   return true;
 }
 
@@ -419,48 +302,17 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/system/health") {
     let dbOnline = false; let dbError = null;
     try { await pool.query("SELECT 1"); dbOnline = true; } catch (error) { dbError = error.message; }
-    writeJson(res, 200, { ok: true, service: "nso-offline-panel", databaseOnline: dbOnline, database: dbOnline ? config.database.name : null, dbError, bindHost: config.bindHost, port: config.port }); return;
+    writeJson(res, 200, { ok: true, service: "nso-offline-panel", access: "local-only-no-login", databaseOnline: dbOnline, database: dbOnline ? config.database.name : null, dbError, bindHost: LOCAL_BIND_HOST, port: config.port }); return;
   }
   const user = await getSessionUser(req);
-  if (req.method === "POST" && url.pathname !== "/api/auth/login") {
-    if (!requireUser(user, res)) return;
-    try { assertCsrf(req, user); } catch (error) { await audit(user, "security", "csrf.denied", "session", null, "denied"); writeJson(res, 403, { error: error.message }); return; }
+  if (req.method === "GET" && url.pathname === "/api/local/context") {
+    writeJson(res, 200, { access: "local-only-no-login", actor: user.username, csrf: LOCAL_CSRF_TOKEN }); return;
   }
-  if (req.method === "POST" && url.pathname === "/api/auth/login") {
-    const body = await readJson(req);
-    const username = String(body.username || "").trim();
-    const password = String(body.password || "");
-    const gameUser = await findGameAccount(username);
-    if (gameUser) {
-      if (!gameAdminEligible(gameUser) || !(await verifyGamePassword(password, gameUser.password))) {
-        await audit(null, "security", "session.login.game_admin", "game_user", String(gameUser.id), "denied", { username });
-        writeJson(res, 401, { error: "Tên đăng nhập hoặc mật khẩu không đúng." }); return;
-      }
-      const principal = await syncGameAdminPrincipal(gameUser);
-      const session = await createPanelSession(principal);
-      setCookie(res, session.token);
-      await audit(principal, "security", "session.login.game_admin", "game_user", String(gameUser.id), "success", { authSource: "game", roleId: GAME_ADMIN_ROLE_ID });
-      writeJson(res, 200, { user: { username: principal.username, role: principal.role, authSource: principal.authSource }, csrf: session.csrf });
-      return;
-    }
-    const [rows] = await pool.query("SELECT id, username, password_hash, role, auth_source AS authSource FROM panel_admin_users WHERE username = ? AND active = 1 AND auth_source = 'panel' LIMIT 1", [username]);
-    const admin = rows[0];
-    if (!admin || !verifyPassword(password, admin.password_hash)) { writeJson(res, 401, { error: "Tên đăng nhập hoặc mật khẩu không đúng." }); return; }
-    const session = await createPanelSession(admin);
-    setCookie(res, session.token);
-    await audit(admin, "security", "session.login.panel", "admin_user", String(admin.id), "success", { authSource: "panel" });
-    writeJson(res, 200, { user: { username: admin.username, role: admin.role, authSource: admin.authSource }, csrf: session.csrf });
-    return;
+  if (url.pathname.startsWith("/api/auth/")) {
+    writeJson(res, 410, { error: "Đăng nhập panel đã bị tắt. Control Room chỉ dùng local-only trên 127.0.0.1." }); return;
   }
-  if (req.method === "POST" && url.pathname === "/api/auth/logout") {
-    const token = parseCookies(req)[SESSION_COOKIE];
-    if (token) await pool.query("DELETE FROM panel_sessions WHERE token_hash = ?", [tokenHash(token)]);
-    await audit(user, "security", "session.logout", "session", null, "success");
-    clearCookie(res); writeJson(res, 200, { ok: true }); return;
-  }
-  if (req.method === "GET" && url.pathname === "/api/auth/me") {
-    if (!user) { writeJson(res, 401, { error: "unauthenticated" }); return; }
-    writeJson(res, 200, { user: { username: user.username, role: user.role, authSource: user.authSource }, csrf: user.csrfToken }); return;
+  if (req.method === "POST") {
+    try { assertCsrf(req, user); } catch (error) { await audit(user, "security", "csrf.denied", "local-request", null, "denied"); writeJson(res, 403, { error: error.message }); return; }
   }
   if (req.method === "GET" && url.pathname === "/api/dashboard") {
     if (!requireUser(user, res, "analyst")) return;
@@ -922,18 +774,6 @@ async function api(req, res, url) {
     await audit(user, "maintenance", "maintenance.approved", "maintenance_window", String(id), "success");
     writeJson(res, 200, { ok: true, runtimeActionRequired: "Thực hiện dừng/khởi động game theo runbook khi tới giờ; panel không tự tác động runtime Java." }); return;
   }
-  if (req.method === "POST" && url.pathname === "/api/auth/password") {
-    if (!requireUser(user, res, "viewer")) return;
-    if (user.authSource === "game") throw new Error("Tài khoản này đồng bộ từ game. Hãy đổi mật khẩu bằng quy trình tài khoản game, không phải panel.");
-    const body = await readJson(req); const currentPassword = String(body.currentPassword || ""); const newPassword = String(body.newPassword || "");
-    if (newPassword.length < 12 || newPassword.length > 128) throw new Error("Mật khẩu mới cần từ 12 đến 128 ký tự.");
-    const [rows] = await pool.query("SELECT password_hash FROM panel_admin_users WHERE id = ? LIMIT 1", [user.id]);
-    if (!rows[0] || !verifyPassword(currentPassword, rows[0].password_hash)) throw new Error("Mật khẩu hiện tại không đúng.");
-    await pool.query("UPDATE panel_admin_users SET password_hash = ? WHERE id = ? LIMIT 1", [hashPassword(newPassword), user.id]);
-    await pool.query("DELETE FROM panel_sessions WHERE user_id = ?", [user.id]);
-    await audit(user, "security", "password.changed", "admin_user", String(user.id), "success");
-    clearCookie(res); writeJson(res, 200, { ok: true, reloginRequired: true }); return;
-  }
   if (req.method === "POST" && url.pathname === "/api/actions/backup") {
     if (!requireUser(user, res, "admin")) return;
     const body = await readJson(req);
@@ -962,7 +802,6 @@ function serveStatic(req, res, url) {
 }
 
 if (config.bootstrapSchema !== false) await ensureSchema();
-await assertGameAdminAuthReady();
 const server = createServer(async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -973,4 +812,4 @@ const server = createServer(async (req, res) => {
   catch (error) { console.error(error); writeJson(res, 400, { error: error.message || "Có lỗi không xác định." }); }
 });
 
-server.listen(config.port, config.bindHost, () => console.log(`Ninja School offline panel: http://${config.bindHost}:${config.port}`));
+server.listen(config.port, LOCAL_BIND_HOST, () => console.log(`Ninja School offline panel (no login): http://${LOCAL_BIND_HOST}:${config.port}`));

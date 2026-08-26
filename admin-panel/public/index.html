@@ -9,24 +9,11 @@
 </head>
 <body>
   <div class="noise"></div>
-  <section id="login-screen" class="login-shell">
-    <div class="login-card">
-      <p class="eyebrow">NINJA SCHOOL / OFFLINE OPS</p>
-      <h1>Control Room</h1>
-      <p class="muted">Đăng nhập bằng tài khoản game đã được gán role Admin. Panel chỉ chạy cùng máy và không gửi dữ liệu ra Internet.</p>
-      <form id="login-form" class="form-stack">
-        <label>Tài khoản<input id="username" name="username" autocomplete="username" value="admin" required /></label>
-        <label>Mật khẩu<input id="password" name="password" type="password" autocomplete="current-password" required /></label>
-        <button type="submit" class="primary">Mở Control Room</button>
-      </form>
-      <p id="login-error" class="error" role="alert"></p>
-    </div>
-  </section>
-  <div id="app" class="app hidden">
+  <div id="app" class="app">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">N</span><div><strong>Ninja Control</strong><small>Offline console</small></div></div>
       <nav id="module-nav" aria-label="Mô-đun quản trị"></nav>
-      <div class="sidebar-foot"><span id="role-badge" class="role-badge"></span><button id="logout" class="ghost">Đăng xuất</button></div>
+      <div class="sidebar-foot"><span id="role-badge" class="role-badge">Local-only / không đăng nhập</span></div>
     </aside>
     <main class="main">
       <header class="topbar"><button id="menu-toggle" class="icon-btn" aria-label="Mở menu">≡</button><div><p class="eyebrow">LOCAL / PROTECTED</p><h2 id="page-title">Tổng quan</h2></div><div class="status-pill"><span id="status-dot"></span><span id="status-text">Đang kiểm tra</span></div></header>

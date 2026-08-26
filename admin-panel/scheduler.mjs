@@ -50,9 +50,8 @@ async function executeJob(job) {
       return;
     }
     if (job.job_type === "cleanup") {
-      const [result] = await pool.query("DELETE FROM panel_sessions WHERE expires_at <= NOW()");
-      await audit(job, "success", { expiredSessionsRemoved: result.affectedRows });
-      await pool.query("UPDATE panel_jobs SET last_run_at = NOW(), last_result = ? WHERE id = ?", [`sessions:${result.affectedRows}`, job.id]);
+      await audit(job, "success", { localOnly: true, removedSessions: 0 });
+      await pool.query("UPDATE panel_jobs SET last_run_at = NOW(), last_result = ? WHERE id = ?", ["local-only:no-sessions", job.id]);
       return;
     }
     const result = { blocked: true, reason: "Event và maintenance transition phải được triển khai riêng theo runbook trước khi bật tự động." };
