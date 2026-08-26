@@ -1,6 +1,6 @@
 # Ninja School Offline — Server Termux Android
 
-Repository này chứa phần mã nguồn server Java của Ninja School Offline được trích từ `NSO_SETUP_SERVER_FREE.zip`. **GitHub chỉ lưu trữ và phân phối mã nguồn; server không chạy liên tục trên GitHub.** Sau khi clone repository, server được build và chạy trực tiếp trên điện thoại Android bằng Termux.
+Repository này chứa phần mã nguồn server Java của Ninja School Offline được trích từ `NSO_SETUP_SERVER_FREE.zip`. **GitHub chỉ lưu trữ và phân phối mã nguồn; server không chạy liên tục trên GitHub.** Installer tải archive từ GitHub Release, sau đó build và chạy server trực tiếp trên điện thoại Android bằng Termux.
 
 ## Thành phần đã tích hợp
 
@@ -29,7 +29,7 @@ Mở Termux và dán đúng một lệnh sau:
 curl -fsSL https://raw.githubusercontent.com/anhduc2003/Ninja-school-offline-/main/install.sh | bash
 ```
 
-Lệnh này tự cập nhật package, cài Git/OpenJDK/Maven/MariaDB, clone hoặc cập nhật repository, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
+Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
 
 Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
 
@@ -37,7 +37,7 @@ Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến m
 curl -fsSL https://raw.githubusercontent.com/anhduc2003/Ninja-school-offline-/main/install.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
-Script kiểm tra repository hiện có bằng `git pull --ff-only`; nếu thư mục đích tồn tại nhưng không phải Git repository, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
+Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, giữ lại `config.properties`, rồi thay mã nguồn/runtime bằng archive mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
 
 ## Cấu hình database
 
@@ -101,17 +101,9 @@ bash scripts/stop-server.sh
 
 `start-server.sh` gọi `termux-wake-lock` nếu tiện ích đó có sẵn để hạn chế việc Android ngủ khi server đang chạy. Khi dừng server, script gọi `termux-wake-unlock` nếu có.
 
-## Cập nhật mã nguồn từ GitHub
+## Cập nhật mã nguồn từ GitHub Release
 
-Từ thư mục dự án:
-
-```bash
-git pull --ff-only
-mvn -DskipTests package
-bash scripts/start-server.sh
-```
-
-Nếu đã sửa `config.properties`, file đó không bị `git pull` ghi đè vì được loại khỏi Git. Khi thay đổi schema, không tự động import lại SQL vào database đang có dữ liệu; hãy đánh giá migration riêng.
+Chạy lại đúng lệnh cài đặt một dòng để tải bản Release mới nhất mà installer đang chỉ tới. Script giữ lại `config.properties`, dừng tiến trình cũ trước khi thay runtime và không import lại SQL nếu database đã có bảng. Khi thay đổi schema, không tự động import lại SQL vào database đang có dữ liệu; hãy đánh giá migration riêng.
 
 ## Lưu ý quan trọng
 

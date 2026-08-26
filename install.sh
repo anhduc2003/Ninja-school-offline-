@@ -1,7 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/anhduc2003/Ninja-school-offline-.git}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.0.1}"
+RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
+RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"
 
 printf '%s\n' '============================================='
@@ -15,7 +17,7 @@ fi
 printf '%s\n' '[1/6] Cài/cập nhật package Termux...'
 pkg update -y
 pkg upgrade -y
-pkg install -y git mariadb
+pkg install -y curl git mariadb
 JAVA_MAJOR=""
 if command -v java >/dev/null 2>&1; then
   JAVA_MAJOR="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n 1 || true)"
@@ -27,17 +29,35 @@ if [ -z "${JAVA_MAJOR}" ] || [ "${JAVA_MAJOR}" -lt 17 ]; then
 fi
 pkg install -y maven
 
-printf '%s\n' '[2/6] Clone hoặc cập nhật mã nguồn...'
-if [ -d "${INSTALL_DIR}/.git" ]; then
-  git -C "${INSTALL_DIR}" pull --ff-only
-else
-  if [ -e "${INSTALL_DIR}" ]; then
-    printf '%s\n' "Thư mục ${INSTALL_DIR} đã tồn tại nhưng không phải Git repository." >&2
+printf '%s\n' '[2/6] Tải archive từ GitHub Release...'
+ARCHIVE_URL="https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_VERSION}/${RELEASE_ASSET}"
+DOWNLOAD_DIR="$(mktemp -d)"
+ARCHIVE_FILE="${DOWNLOAD_DIR}/${RELEASE_ASSET}"
+trap 'rm -rf "${DOWNLOAD_DIR}"' EXIT
+
+if [ -e "${INSTALL_DIR}" ]; then
+  if [ ! -d "${INSTALL_DIR}/.git" ] && [ ! -f "${INSTALL_DIR}/.termux/release-installed" ]; then
+    printf '%s\n' "Thư mục ${INSTALL_DIR} đã tồn tại nhưng không phải bản cài đặt của server." >&2
     printf '%s\n' 'Đặt INSTALL_DIR sang thư mục khác hoặc đổi tên thư mục hiện tại rồi chạy lại.' >&2
     exit 1
   fi
-  git clone "${REPO_URL}" "${INSTALL_DIR}"
+  if [ -x "${INSTALL_DIR}/scripts/stop-server.sh" ]; then
+    bash "${INSTALL_DIR}/scripts/stop-server.sh" || true
+  fi
+  if [ -f "${INSTALL_DIR}/config.properties" ]; then
+    cp "${INSTALL_DIR}/config.properties" "${DOWNLOAD_DIR}/config.properties.backup"
+  fi
+  rm -rf "${INSTALL_DIR}"
 fi
+
+curl -fL --retry 5 --retry-all-errors --progress-bar -o "${ARCHIVE_FILE}" "${ARCHIVE_URL}"
+mkdir -p "${INSTALL_DIR}"
+tar -xzf "${ARCHIVE_FILE}" -C "${INSTALL_DIR}"
+if [ -f "${DOWNLOAD_DIR}/config.properties.backup" ]; then
+  cp "${DOWNLOAD_DIR}/config.properties.backup" "${INSTALL_DIR}/config.properties"
+fi
+mkdir -p "${INSTALL_DIR}/.termux"
+printf '%s\n' "${RELEASE_VERSION}" > "${INSTALL_DIR}/.termux/release-installed"
 
 cd "${INSTALL_DIR}"
 chmod +x scripts/*.sh
