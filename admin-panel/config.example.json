@@ -3,6 +3,7 @@
   "port": 18080,
   "sessionHours": 8,
   "bootstrapSchema": true,
+  "configSource": "Tự lấy db.* từ ../config.properties ở lần tạo config.local.json đầu tiên; sau đó config.local.json là cấu hình panel local riêng.",
   "database": {
     "host": "127.0.0.1",
     "port": 3306,

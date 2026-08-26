@@ -12,6 +12,7 @@ import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
+const GAME_CONFIG_PATH = join(ROOT_DIR, "config.properties");
 const DATA_DIR = join(__dirname, "data");
 const BACKUP_DIR = join(__dirname, "backups");
 const PUBLIC_DIR = join(__dirname, "public");
@@ -47,12 +48,37 @@ const modules = [
   ["security", "Bảo mật tài khoản", "Kiểm soát", "Đổi mật khẩu panel local và thu hồi session", "viewer"],
 ].map(([id, label, group, description, role]) => ({ id, label, group, description, role }));
 
+function readGameProperties() {
+  if (!existsSync(GAME_CONFIG_PATH)) return {};
+  return Object.fromEntries(readFileSync(GAME_CONFIG_PATH, "utf8").split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#") && line.includes("=")).map(line => {
+    const index = line.indexOf("=");
+    return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+  }));
+}
+
+function configFromGameProperties(template) {
+  const game = readGameProperties();
+  if (Object.keys(game).length === 0) return template;
+  const port = Number(game["db.port"]);
+  return {
+    ...template,
+    database: {
+      ...template.database,
+      host: game["db.host"] || template.database.host,
+      port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : template.database.port,
+      user: game["db.user"] || template.database.user,
+      password: game["db.password"] ?? template.database.password,
+      name: game["db.dbname"] || template.database.name,
+    },
+  };
+}
+
 function ensureLocalConfig() {
   mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
   if (!existsSync(CONFIG_PATH)) {
     const template = JSON.parse(readFileSync(join(__dirname, "config.example.json"), "utf8"));
-    writeFileSync(CONFIG_PATH, `${JSON.stringify(template, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(CONFIG_PATH, `${JSON.stringify(configFromGameProperties(template), null, 2)}\n`, { mode: 0o600 });
   }
   return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 }
@@ -302,6 +328,11 @@ function requireUser(user, res, role = "viewer") {
 }
 
 async function api(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/system/health") {
+    let dbOnline = false; let dbError = null;
+    try { await pool.query("SELECT 1"); dbOnline = true; } catch (error) { dbError = error.message; }
+    writeJson(res, 200, { ok: true, service: "nso-offline-panel", databaseOnline: dbOnline, database: dbOnline ? config.database.name : null, dbError, bindHost: config.bindHost, port: config.port }); return;
+  }
   const user = await getSessionUser(req);
   if (req.method === "POST" && url.pathname !== "/api/auth/login") {
     if (!requireUser(user, res)) return;

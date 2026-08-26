@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-RELEASE_VERSION="${RELEASE_VERSION:-v1.1.3}"
+RELEASE_VERSION="${RELEASE_VERSION:-v1.1.4}"
 RELEASE_REPO="${RELEASE_REPO:-anhduc2003/Ninja-school-offline-}"
 RELEASE_ASSET="${RELEASE_ASSET:-ninja-school-termux-${RELEASE_VERSION}.tar.gz}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Ninja-school-offline-}"

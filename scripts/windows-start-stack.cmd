@@ -26,12 +26,20 @@ echo [2/4] Build Java server neu can...
 if not exist "target\Nso-jar-with-dependencies.jar" call mvn -DskipTests package || exit /b 1
 
 echo [3/4] Khoi dong Ninja Control Room va scheduler...
-call admin-panel\run-panel-stack.cmd
+call admin-panel\run-panel-stack.cmd || exit /b 1
+for /L %%I in (1,1,30) do (
+  curl -fsS --max-time 2 http://127.0.0.1:18080/api/system/health >nul 2>&1 && goto :panel_ready
+  timeout /t 1 /nobreak >nul
+)
+echo [ERROR] Panel health check khong thanh cong. Xem logs\admin-panel.log
+exit /b 1
+:panel_ready
 
 echo [4/4] Khoi dong Java game server headless...
 start "Ninja School Game Server" /b java -Dninja.headless=true -jar "target\Nso-jar-with-dependencies.jar"
 echo.
 echo Game TCP: 127.0.0.1:14444
 echo Control Room: http://127.0.0.1:18080
+echo Panel health: http://127.0.0.1:18080/api/system/health
 echo Panel credential lan dau: admin-panel\data\first-login.txt
 endlocal

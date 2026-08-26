@@ -12,6 +12,8 @@ The account form was reloaded after a label correction. Its username rule now re
 
 The local MariaDB fixture E2E test created a game account and confirmed a `$2y$` bcrypt prefix, created an item, performed a full metadata update (type, gender, description, level, icon, part, fashion and `isUpToUp`), created a NPC store and a `store_data` row, updated it, read it through the panel API, then deleted it. Fixture records were removed after each test path.
 
+The hardened Termux/Linux launcher passed Bash syntax checking, reinstalled production dependencies from the lockfile when its fingerprint changed, started an isolated local Node process and reached `GET /api/system/health` before declaring readiness. A separate bootstrap check temporarily removed `config.local.json`, confirmed a new local file was created from `config.properties`, then restored the fixture configuration; it did not claim a real Android-device test.
+
 ## Automated checks
 
 `npm run check` and `npm test` passed. The fixture verified password hashing, RBAC ordering, session-token hashing, six-field cron matching, SQL-backed dashboard reads, protected writes, backup creation, job approval and scheduler audit writes. It also verified authenticated read access for inventory, event points, reward history, leaderboards, analytics and maintenance views. The fixture deliberately uses a reduced `players` table, so the panel verifies column availability before it selects optional game-schema fields.

@@ -10,13 +10,15 @@ Trên Termux/Linux, sau khi MariaDB đang chạy:
 bash admin-panel/start-panel.sh
 ```
 
+Launcher dùng lock chống gọi trùng, cài dependency đúng theo `package-lock.json`, dọn PID stale, rồi chỉ báo thành công sau khi endpoint local `http://127.0.0.1:18080/api/system/health` phản hồi. Lần đầu, nếu chưa có `admin-panel/config.local.json`, panel lấy các khóa `db.*` từ `config.properties` của game để tạo cấu hình local. Các lần sau không tự ghi đè file local đó.
+
 Trên Windows:
 
 ```bat
 admin-panel\run-panel-stack.cmd
 ```
 
-Lệnh Windows cài dependency production nếu cần, khởi động panel và scheduler local. Truy cập bằng trình duyệt cùng máy tại `http://127.0.0.1:18080`. Lần chạy đầu tạo user `admin` và ghi mật khẩu tạm thời vào `admin-panel/data/first-login.txt` với quyền file hạn chế. Đổi mật khẩu trước khi dùng panel cho vận hành thực tế.
+Lệnh Windows cài dependency production nếu cần, kiểm tra health endpoint rồi khởi động panel và scheduler local. Truy cập bằng trình duyệt cùng máy tại `http://127.0.0.1:18080`; health local là `http://127.0.0.1:18080/api/system/health`. Lần chạy đầu tạo user `admin` và ghi mật khẩu tạm thời vào `admin-panel/data/first-login.txt` với quyền file hạn chế. Đổi mật khẩu trước khi dùng panel cho vận hành thực tế.
 
 ## An toàn vận hành
 
