@@ -33,6 +33,8 @@ import Exe_Z.lib.RandomCollection;
 import Exe_Z.map.item.ItemMapFactory;
 import Exe_Z.party.Group;
 import Exe_Z.server.Config;
+import Exe_Z.server.WorldBossNotificationService;
+
 import Exe_Z.store.StoreManager;
 import Exe_Z.util.Log;
 
@@ -741,6 +743,7 @@ public class Mob {
             if (zone != null) {
                 zone.mobDead(this, killer);
             }
+            WorldBossNotificationService.notifyDefeat(this, killer);
             int dLevel = Math.abs(this.level - killer.level);
             if (Event.isKoroKing() && dLevel <= 10) {
                 if (NinjaUtils.nextInt(2000) == -1) {

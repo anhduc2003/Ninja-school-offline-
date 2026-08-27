@@ -3,6 +3,7 @@ package Exe_Z.api;
 import Exe_Z.server.Config;
 import Exe_Z.server.GlobalService;
 import Exe_Z.server.ServerManager;
+import Exe_Z.server.WorldBossNotificationService;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -24,6 +25,7 @@ public final class RuntimeControlServer {
     private static final String HOST = "127.0.0.1";
     private static final int MAX_BODY_BYTES = 16 * 1024;
     private static final String BROADCAST_PATH = "/api/control/broadcast";
+    private static final String WORLD_BOSS_TEST_PATH = "/api/control/world-boss-test";
     private static HttpServer server;
 
     private RuntimeControlServer() {
@@ -43,6 +45,7 @@ public final class RuntimeControlServer {
             server = HttpServer.create(new InetSocketAddress(HOST, config.getControlPort()), 0);
             server.createContext("/api/control/health", RuntimeControlServer::handleHealth);
             server.createContext(BROADCAST_PATH, RuntimeControlServer::handleBroadcast);
+            server.createContext(WORLD_BOSS_TEST_PATH, RuntimeControlServer::handleWorldBossTest);
             server.setExecutor(Executors.newFixedThreadPool(2, runnable -> {
                 Thread thread = new Thread(runnable, "runtime-control");
                 thread.setDaemon(true);
@@ -107,6 +110,37 @@ public final class RuntimeControlServer {
         } catch (Exception exception) {
             System.err.println("Runtime control broadcast failed: " + exception.getMessage());
             respond(exchange, 500, "{\"error\":\"Broadcast failed\"}");
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static void handleWorldBossTest(HttpExchange exchange) throws IOException {
+        try {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                respond(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            if (!authorized(exchange)) {
+                respond(exchange, 401, "{\"error\":\"Unauthorized\"}");
+                return;
+            }
+            byte[] body = readBody(exchange.getRequestBody());
+            JSONObject payload = (JSONObject) new JSONParser().parse(new String(body, StandardCharsets.UTF_8));
+            long rawConfigId = ((Number) payload.getOrDefault("configId", 0L)).longValue();
+            if (rawConfigId < 1 || rawConfigId > Integer.MAX_VALUE) {
+                respond(exchange, 400, "{\"error\":\"Invalid configId\"}");
+                return;
+            }
+            int onlinePlayers = WorldBossNotificationService.sendTest((int) rawConfigId);
+            respond(exchange, 200, "{\"ok\":true,\"onlinePlayers\":" + onlinePlayers + "}");
+        } catch (org.json.simple.parser.ParseException | ClassCastException exception) {
+            respond(exchange, 400, "{\"error\":\"Invalid JSON payload\"}");
+        } catch (IllegalArgumentException exception) {
+            respond(exchange, 400, "{\"error\":\"" + jsonEscape(exception.getMessage()) + "\"}");
+        } catch (Exception exception) {
+            System.err.println("World boss test failed: " + exception.getMessage());
+            respond(exchange, 500, "{\"error\":\"World boss test failed\"}");
         } finally {
             exchange.close();
         }

@@ -45,6 +45,7 @@ const modules = [
   ["rates", "Tỷ lệ game", "Nội dung", "EXP, level rate và option có phê duyệt", "admin"],
   ["bosses", "Quái & Boss", "Nội dung", "Metadata quái, boss, HP và bản đồ spawn", "operator"],
   ["notices", "Thông báo", "Vận hành", "Cập nhật options.notify theo Java contract; broadcast runtime không tự động hóa", "moderator"],
+  ["world-boss-notices", "Thông báo Boss thế giới", "Vận hành", "Cấu hình thông báo Boss xuất hiện/bị hạ theo group, server và cooldown", "admin"],
   ["maintenance", "Bảo trì", "Vận hành", "Draft/approval window và runbook restart; không dừng Java chỉ bằng SQL", "admin"],
   ["health", "Sức khỏe server", "Vận hành", "Liveness check và resource snapshot", "analyst"],
   ["incidents", "Sự cố", "Vận hành", "Triage, acknowledgement và escalation", "operator"],
@@ -55,6 +56,15 @@ const modules = [
   ["jobs", "Tác vụ định kỳ", "Kiểm soát", "Health check, cleanup, report và transition đã phê duyệt", "admin"],
   ["security", "Chế độ local-only", "Kiểm soát", "Không có đăng nhập; panel chỉ lắng nghe trên chính thiết bị", "viewer"],
 ].map(([id, label, group, description, role]) => ({ id, label, group, description, role }));
+const WORLD_BOSS_GROUPS = [
+  { key: "normal", label: "Boss thường" },
+  { key: "vdmq", label: "Vùng đất ma quỷ" },
+  { key: "ltt", label: "Làng truyền thuyết" },
+  { key: "lc", label: "Làng cổ" },
+  { key: "hangvithu", label: "Hang vĩ thú" },
+  { key: "SK", label: "Boss sự kiện" },
+];
+const WORLD_BOSS_EVENT_TYPES = ["spawn", "defeat"];
 
 function readGameProperties() {
   if (!existsSync(GAME_CONFIG_PATH)) return {};
@@ -62,6 +72,48 @@ function readGameProperties() {
     const index = line.indexOf("=");
     return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
   }));
+}
+
+function worldBossNotificationConfig(body) {
+  const id = Number(body.id || 0);
+  const serverId = Number(body.serverId ?? 0);
+  const bossGroup = String(body.bossGroup || "");
+  const eventType = String(body.eventType || "spawn");
+  const sender = String(body.sender || "Hệ thống").trim().slice(0, 40);
+  const messageTemplate = String(body.messageTemplate || "").trim().slice(0, 500);
+  const cooldownSeconds = Number(body.cooldownSeconds ?? 0);
+  const parseDate = value => { if (!value) return null; const date = new Date(value); if (Number.isNaN(date.getTime())) throw new Error("Thời gian hiệu lực không hợp lệ."); return date; };
+  const startsAt = parseDate(body.startsAt);
+  const endsAt = parseDate(body.endsAt);
+  if (!Number.isInteger(id) || id < 0 || !Number.isInteger(serverId) || serverId < 0 || serverId > 255) throw new Error("ID hoặc Server ID không hợp lệ.");
+  if (!WORLD_BOSS_GROUPS.some(group => group.key === bossGroup) || !WORLD_BOSS_EVENT_TYPES.includes(eventType)) throw new Error("Nhóm Boss hoặc loại sự kiện không hợp lệ.");
+  if (!sender || !messageTemplate || messageTemplate.length < 3) throw new Error("Người gửi và nội dung thông báo không được trống.");
+  if (!Number.isInteger(cooldownSeconds) || cooldownSeconds < 0 || cooldownSeconds > 86400) throw new Error("Cooldown phải từ 0 đến 86.400 giây.");
+  if (startsAt && endsAt && startsAt >= endsAt) throw new Error("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
+  const allowedPlaceholders = ["{boss}", "{map}", "{zone}", "{killer}", "{time}"];
+  const unsupported = (messageTemplate.match(/\{[^}]+\}/g) || []).filter(token => !allowedPlaceholders.includes(token));
+  if (unsupported.length) throw new Error(`Placeholder không hỗ trợ: ${unsupported.join(", ")}.`);
+  return { id, serverId, bossGroup, eventType, sender, messageTemplate, cooldownSeconds, enabled: body.enabled === false || String(body.enabled) === "0" ? 0 : 1, startsAt, endsAt };
+}
+
+async function worldBossNotificationData() {
+  const [configs] = await pool.query(`SELECT n.id, n.server_id, n.boss_group, n.event_type, n.sender, n.message_template, n.cooldown_seconds, n.enabled, n.starts_at, n.ends_at, n.created_at, n.updated_at, COALESCE(l.sent_count, 0) AS sent_count FROM panel_world_boss_notifications n LEFT JOIN (SELECT config_id, COUNT(*) AS sent_count FROM panel_world_boss_notification_logs GROUP BY config_id) l ON l.config_id = n.id ORDER BY n.enabled DESC, n.server_id, n.boss_group, n.event_type`);
+  const [logs] = await pool.query(`SELECT l.id, l.config_id, n.boss_group, l.event_type, l.boss_name, l.map_name, l.zone_id, l.message, l.online_players, l.sent_at FROM panel_world_boss_notification_logs l LEFT JOIN panel_world_boss_notifications n ON n.id = l.config_id ORDER BY l.sent_at DESC LIMIT 200`);
+  return { configs, logs, groups: WORLD_BOSS_GROUPS };
+}
+
+async function saveWorldBossNotification(user, body) {
+  const config = worldBossNotificationConfig(body);
+  let id = config.id;
+  if (id) {
+    const [result] = await pool.query(`UPDATE panel_world_boss_notifications SET server_id = ?, boss_group = ?, event_type = ?, sender = ?, message_template = ?, cooldown_seconds = ?, enabled = ?, starts_at = ?, ends_at = ?, updated_by = ? WHERE id = ? LIMIT 1`, [config.serverId, config.bossGroup, config.eventType, config.sender, config.messageTemplate, config.cooldownSeconds, config.enabled, config.startsAt, config.endsAt, user.id, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy cấu hình Boss notification.");
+  } else {
+    const [result] = await pool.query(`INSERT INTO panel_world_boss_notifications (server_id, boss_group, event_type, sender, message_template, cooldown_seconds, enabled, starts_at, ends_at, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [config.serverId, config.bossGroup, config.eventType, config.sender, config.messageTemplate, config.cooldownSeconds, config.enabled, config.startsAt, config.endsAt, user.id, user.id]);
+    id = result.insertId;
+  }
+  await audit(user, "world-boss-notices", "world_boss_notification.saved", "world_boss_notification", String(id), "success", { serverId: config.serverId, bossGroup: config.bossGroup, eventType: config.eventType, enabled: config.enabled });
+  return id;
 }
 
 async function eventControlData() {
@@ -415,6 +467,38 @@ async function ensureSchema() {
       INDEX panel_reward_claim_campaign_idx (campaign_id, claimed_at),
       INDEX panel_reward_claim_user_idx (user_id, claimed_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_world_boss_notifications (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      server_id INT NOT NULL DEFAULT 0,
+      boss_group VARCHAR(32) NOT NULL,
+      event_type ENUM('spawn','defeat') NOT NULL,
+      sender VARCHAR(40) NOT NULL DEFAULT 'Hệ thống',
+      message_template VARCHAR(500) NOT NULL,
+      cooldown_seconds INT NOT NULL DEFAULT 0,
+      enabled TINYINT(1) NOT NULL DEFAULT 0,
+      starts_at DATETIME NULL,
+      ends_at DATETIME NULL,
+      created_by INT NOT NULL,
+      updated_by INT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY panel_world_boss_rule_unique (server_id, boss_group, event_type),
+      INDEX panel_world_boss_rule_active_idx (server_id, boss_group, event_type, enabled),
+      INDEX panel_world_boss_rule_time_idx (starts_at, ends_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_world_boss_notification_logs (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      config_id INT NOT NULL,
+      event_type ENUM('spawn','defeat') NOT NULL,
+      boss_name VARCHAR(150) NOT NULL,
+      map_name VARCHAR(150) NOT NULL,
+      zone_id INT NOT NULL,
+      message VARCHAR(500) NOT NULL,
+      online_players INT NOT NULL DEFAULT 0,
+      sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX panel_world_boss_log_config_idx (config_id, sent_at),
+      INDEX panel_world_boss_log_time_idx (sent_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   ];
   for (const statement of statements) await pool.query(statement);
   await ensureSchemaColumn("panel_reward_campaigns", "server_id", "INT NOT NULL DEFAULT 0 AFTER npc_key");
@@ -766,6 +850,10 @@ async function api(req, res, url) {
       pool.query("SELECT id, type, name FROM item_option ORDER BY id"),
     ]);
     writeJson(res, 200, { stores: stores[0], npcs: npcs[0], rows: rows[0], optionCatalog: optionCatalog[0], reloadRequired: true }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/world-boss-notifications") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await worldBossNotificationData()); return;
   }
   if (req.method === "GET" && url.pathname === "/api/monsters") {
     if (!requireUser(user, res, "analyst")) return;
@@ -1190,6 +1278,35 @@ async function api(req, res, url) {
     try { await connection.beginTransaction(); await connection.query("DELETE FROM panel_reward_item_options WHERE reward_item_id IN (SELECT id FROM panel_reward_items WHERE campaign_id = ?)", [id]); await connection.query("DELETE FROM panel_reward_items WHERE campaign_id = ?", [id]); const [result] = await connection.query("DELETE FROM panel_reward_campaigns WHERE id = ? LIMIT 1", [id]); await connection.commit(); if (!result.affectedRows) throw new Error("Không tìm thấy campaign."); } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
     await audit(user, "rewards", "reward_campaign.deleted", "reward_campaign", String(id), "success");
     writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/world-boss-notification-save") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req);
+    if (body.confirmation !== `SAVE WORLD BOSS ${String(body.eventType || "").toUpperCase()}`) throw new Error("Mã xác nhận thông báo Boss không hợp lệ.");
+    const id = await saveWorldBossNotification(user, body);
+    writeJson(res, 200, { ok: true, id }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/world-boss-notification-state") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id); const enabled = Number(body.enabled);
+    if (!Number.isInteger(id) || id < 1 || ![0, 1].includes(enabled) || body.confirmation !== `${enabled ? "ENABLE" : "DISABLE"} WORLD BOSS ${id}`) throw new Error("Cấu hình hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE panel_world_boss_notifications SET enabled = ?, updated_by = ? WHERE id = ? LIMIT 1", [enabled, user.id, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy cấu hình Boss notification.");
+    await audit(user, "world-boss-notices", enabled ? "world_boss_notification.enabled" : "world_boss_notification.disabled", "world_boss_notification", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/world-boss-notification-test") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `TEST WORLD BOSS ${id}`) throw new Error("Cấu hình hoặc mã xác nhận không hợp lệ.");
+    try {
+      const onlinePlayers = await runtimeControlRequest("/api/control/world-boss-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ configId: id }) });
+      await audit(user, "world-boss-notices", "world_boss_notification.tested", "world_boss_notification", String(id), "success", { onlinePlayers: Number(onlinePlayers.onlinePlayers || 0) });
+      writeJson(res, 200, { ok: true, onlinePlayers: Number(onlinePlayers.onlinePlayers || 0) }); return;
+    } catch (error) {
+      await audit(user, "world-boss-notices", "world_boss_notification.tested", "world_boss_notification", String(id), "failed", { error: error.message || "unknown" });
+      throw error;
+    }
   }
   if (req.method === "POST" && url.pathname === "/api/actions/notice-broadcast") {
     if (!requireUser(user, res, "moderator")) return;

@@ -20,6 +20,7 @@ public class SpawnBoss {
     private Map map;
     private final RandomCollection<Integer> mobs = new RandomCollection<>();
     private Mob currMonster;
+    private String notificationGroup = "normal";
     private short x, y;
 
     public SpawnBoss(int id, Map map, short x, short y) {
@@ -45,8 +46,10 @@ public class SpawnBoss {
         Mob mob = z.getMobFactory().createBoss((short) mobTemplate.getId(), mobTemplate.getHp(), mobTemplate.getLevel(), x, y);
         z.addMob(mob);
         currMonster = mob;
-        String text = mob.template.name + " đã xuất hiện ở " + z.tilemap.name + " khu "+ z.id;
-        GlobalService.getInstance().chat("Hệ thống", text);
+        String text = mob.template.name + " đã xuất hiện ở " + z.tilemap.name + " khu " + z.id;
+        if (!WorldBossNotificationService.notifySpawn(this, mob, z)) {
+            GlobalService.getInstance().chat("Hệ thống", text);
+        }
         Log.debug(text + " khu " + z.id);
         Log.info(text + " khu "+ z.id);
     }

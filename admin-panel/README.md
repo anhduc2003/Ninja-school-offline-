@@ -59,6 +59,21 @@ Nếu `admin-panel/data/config.local.json` đã tồn tại từ trước, cập
 
 Thông báo không được lưu để phát lại cho người chơi offline. Nếu Java đang tắt, sai token hoặc bridge chưa cấu hình, panel chỉ hiển thị trạng thái lỗi và khóa nút gửi.
 
+## Thông báo Boss thế giới
+
+Mô-đun **Thông báo Boss thế giới** quản lý thông báo tự động khi Boss xuất hiện hoặc bị hạ trong `SpawnBossManager`. Cấu hình được lưu trong `panel_world_boss_notifications`; lịch sử phát được ghi trong `panel_world_boss_notification_logs`. Panel tự tạo schema khi `bootstrapSchema` đang bật.
+
+Trong form quản trị, chọn group Boss, loại sự kiện, server scope, người gửi, nội dung, cooldown và thời gian hiệu lực. `server_id = 0` áp dụng cho toàn bộ server; server cụ thể được ưu tiên hơn cấu hình global. Các placeholder được hỗ trợ là `{boss}`, `{map}`, `{zone}`, `{killer}` và `{time}`. Template lạ sẽ bị từ chối.
+
+| Sự kiện | Thời điểm phát | Placeholder hữu ích |
+|---|---|---|
+| `spawn` | Ngay sau khi Boss được tạo tại khu ngẫu nhiên/lịch tương ứng | `{boss}`, `{map}`, `{zone}`, `{time}` |
+| `defeat` | Khi Boss thế giới được người chơi hạ | `{boss}`, `{map}`, `{zone}`, `{killer}`, `{time}` |
+
+Cooldown được áp dụng trong tiến trình Java để tránh phát lặp do retry hoặc nhiều trigger gần nhau. Nút **Test** gửi bản mẫu qua runtime bridge tới người chơi online nhưng không tạo kill/spawn giả và không ghi lịch sử gameplay. Thông báo mặc định khi chưa có cấu hình spawn vẫn được giữ lại để tương thích server cũ.
+
+Quy trình setup là: đặt `server.control.token` trong `config.properties`, khởi động lại Java và panel, mở **Thông báo Boss thế giới**, tạo cấu hình `spawn`/`defeat`, lưu bằng confirmation phrase, bật cấu hình và dùng **Test** để kiểm tra. Nếu database hoặc bridge không sẵn sàng, runtime tự fallback về thông báo spawn mặc định và panel hiển thị lỗi thao tác test. Thiết kế chi tiết nằm tại [`WORLD_BOSS_NOTIFICATION_DESIGN.md`](WORLD_BOSS_NOTIFICATION_DESIGN.md).
+
 ## Icon vật phẩm
 
 Panel hiển thị thumbnail từ chính sprite game `Data/Img/Small/1/Small{item.icon}.png`, cùng quy tắc filename Java dùng khi client yêu cầu icon. Thumbnail hiện ở catalog item, picker hành trang, item đang mang, tìm/đang chọn Shop NPC và kết quả/reward Gift Code. Endpoint local-only chỉ nhận số icon hợp lệ, chỉ đọc zoom `1`–`4` trong thư mục sprite allowlist và trả fallback ID khi file icon thiếu; browser không thể đọc file tùy ý ngoài asset game.

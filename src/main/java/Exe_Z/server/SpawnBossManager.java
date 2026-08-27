@@ -181,17 +181,36 @@ public class SpawnBossManager {
     public List<SpawnBoss> getListSpawnBoss(String key) {
         return spawnBosses.get(key);
     }
+
+    public SpawnBoss findByMonster(Exe_Z.mob.Mob monster) {
+        if (monster == null) {
+            return null;
+        }
+        for (List<SpawnBoss> list : spawnBosses.values()) {
+            for (SpawnBoss spawnBoss : list) {
+                if (spawnBoss.getCurrMonster() == monster) {
+                    return spawnBoss;
+                }
+            }
+        }
+        return null;
+    }
+
     private void spawnRandom(String key) {
         List<SpawnBoss> list = getListSpawnBoss(key);
         int rand = NinjaUtils.nextInt(list.size());
         SpawnBoss sp = list.get(rand);
+        sp.setNotificationGroup(key);
         sp.spawn();
+
     }
     private void spawnAll(String key) {
         List<SpawnBoss> list = getListSpawnBoss(key);
         for (SpawnBoss spawn : list) {
+            spawn.setNotificationGroup(key);
             spawn.spawn();
         }
+
     }
 
     public void spawn(int hours, int minutes, int seconds, String key, byte type) {
