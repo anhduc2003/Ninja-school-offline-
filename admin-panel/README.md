@@ -28,6 +28,21 @@ Panel không dùng login nhưng vẫn tạo token CSRF chỉ tồn tại trong t
 
 Các thay đổi item, shop, monster và option có thể cần reload hoặc restart Java vì game giữ cache trong bộ nhớ. Chỉ số/hành trang nhân vật vẫn bị chặn khi người chơi online để tránh desync. Panel không tự dừng Java và không public MariaDB. Broadcast runtime là ngoại lệ có contract rõ ràng: bridge chỉ bind `127.0.0.1`, yêu cầu bearer token và chỉ gửi tin tới nhân vật online trong instance Java hiện tại.
 
+## Reward Campaign Center
+
+Mô-đun **Reward Campaigns** dùng để quản lý trực quan bốn nhóm quà: Fancung tại NPC Hùng Vương, quà tân thủ tại NPC Admin, nạp tích lũy tại NPC Hùng Vương và quà sự kiện tại NPC được chọn. Quản trị viên tìm item từ catalog, chọn option theo tên, đặt số lượng/min/max, tiền thưởng, thời gian hiệu lực, server scope và phạm vi nhận; không cần nhập JSON hay sửa mã Java.
+
+Campaign được lưu trong các bảng chuẩn hóa `panel_reward_campaigns`, `panel_reward_items`, `panel_reward_item_options` và `panel_reward_claims`. Campaign có lượt nhận sẽ không thể sửa/xóa để giữ đối soát; chỉ có thể tắt. `server_id = 0` áp dụng mọi server, còn giá trị cụ thể chỉ áp dụng server tương ứng. Khi campaign active, menu hard-code tương ứng tại NPC được thay thế bằng campaign runtime.
+
+| Loại campaign | NPC | Điều kiện runtime |
+|---|---|---|
+| Fancung | Hùng Vương | `users.fancung` đã đạt điều kiện |
+| Quà tân thủ | Admin | `users.received_first_gift = 0` |
+| Nạp tích lũy | Hùng Vương | `users.tongnap` đạt mốc Coin |
+| Quà sự kiện | Admin hoặc Hùng Vương | `Char.eventPoint` theo key điểm và mốc cấu hình |
+
+Mỗi campaign cần được bật sau khi kiểm tra preview. Runtime kiểm tra đủ slot túi, item/option tồn tại trong catalog, thời gian hiệu lực, điều kiện và claim history; các lượt nhận sau đó được ghi lại để tra cứu trong cùng module.
+
 ## Thông báo toàn server
 
 Mô-đun **Thông báo** có hai luồng riêng. `options.notify` là cấu hình persisted mà Java có thể đọc khi khởi động; nút **Gửi thông báo ngay** dùng runtime bridge để gọi `GlobalService.chat` và phát `CMD.CHAT_SERVER` tới tất cả nhân vật đang online, không cần restart.

@@ -95,6 +95,8 @@ import Exe_Z.option.SkillOption;
 import Exe_Z.party.Group;
 import Exe_Z.party.MemberGroup;
 import Exe_Z.server.Config;
+import Exe_Z.reward.RewardCampaignService;
+
 import Exe_Z.server.Events;
 import Exe_Z.server.GameData;
 import Exe_Z.server.GlobalService;
@@ -11574,7 +11576,7 @@ public class Char {
 
             }));
         }
-        if (!user.receivedFirstGift) {
+        if (!RewardCampaignService.hasActiveCampaign("admin", "newbie") && !user.receivedFirstGift) {
             menus.add(new Menu(CMDMenu.EXECUTE, "Quà tân thủ", () -> {
                 if (getSlotNull() < 12) {
                     warningBagFull();
@@ -11746,8 +11748,8 @@ public class Char {
 //
 //            }
 //        }));
+        RewardCampaignService.addCampaignMenus(this, "admin");
     }
-
     public void boquanv() {
         menus.clear();
         if (!isHuman) {
@@ -19780,7 +19782,7 @@ public class Char {
 //            }));
 //            getService().openUIMenu();
 //        }));
-        if (this.napdau == 0) {
+        if (!RewardCampaignService.hasActiveCampaign("hung_vuong", "topup") && this.napdau == 0) {
             menus.add(new Menu(CMDMenu.EXECUTE, "Quà Nạp Lần Đầu Chỉ Được 1 Gói", () -> {
                 menus.clear();
 //                menus.add(new Menu(CMDMenu.EXECUTE, "Quà Nạp Lần Đầu 19K", () -> {
@@ -20035,7 +20037,7 @@ public class Char {
 //                getService().openUIMenu();
 //            }));
 //        }
-        if (this.fancung == 0) {
+        if (!RewardCampaignService.hasActiveCampaign("hung_vuong", "fancung") && this.fancung == 0) {
             menus.add(new Menu(CMDMenu.EXECUTE, "Quà Fancung", () -> {
                 menus.clear();
                 menus.add(new Menu(CMDMenu.EXECUTE, "Nhận Quà Fancung", () -> {
@@ -20061,7 +20063,7 @@ public class Char {
                         }
                     }
                 }));
-                menus.add(new Menu(CMDMenu.EXECUTE, "Quà Fancung", () -> {
+            menus.add(new Menu(CMDMenu.EXECUTE, "Quà Fancung", () -> {
                     StringBuilder sb = new StringBuilder();
                     sb.append("- : 1 Danh Hiệu Fancung 7d").append("\n");
                     sb.append("- : 1 Linh Chi Ngàn Năm").append("\n");
@@ -20075,9 +20077,11 @@ public class Char {
 
 //        if (user.isAdmin()) {
 //            menus.add(new Menu(CMDMenu.EXECUTE, "Quản lý", () -> {
+
 //                AdminService.getInstance().openUIAdmin(this);
 //            }));
 //        }
+        RewardCampaignService.addCampaignMenus(this, "hung_vuong");
     }
 
     public void muadanhvong() {

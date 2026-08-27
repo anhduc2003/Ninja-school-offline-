@@ -36,6 +36,7 @@ const modules = [
   ["inventory", "Túi đồ", "Kinh tế", "Chỉnh bag/box/equipped/fashion offline với validator, snapshot và audit", "operator"],
   ["currency", "Tiền tệ", "Kinh tế", "Lượng, coin, xu, yên với transaction và xác nhận", "operator"],
   ["rewards", "Phần thưởng", "Kinh tế", "Gift code, reward delivery và theo dõi lịch sử", "operator"],
+  ["reward-campaigns", "Reward Campaigns", "Kinh tế", "Fancung, quà tân thủ, nạp tích lũy và quà sự kiện bằng catalog", "admin"],
   ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
   ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Tạo và chỉnh catalog item có validation", "operator"],
   ["shop", "Cửa hàng", "Nội dung", "Shopcoin và hàng hóa NPC từ stores/store_data", "operator"],
@@ -275,6 +276,14 @@ async function hasAutoIncrementId(tableName) {
   return autoIncrementCache.get(tableName);
 }
 
+async function ensureSchemaColumn(tableName, columnName, definition) {
+  const columns = await tableColumns(tableName);
+  if (!columns.has(columnName)) {
+    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    tableColumnsCache.delete(tableName);
+  }
+}
+
 async function ensureSchema() {
   const statements = [
     `CREATE TABLE IF NOT EXISTS panel_audit_events (
@@ -350,8 +359,65 @@ async function ensureSchema() {
       INDEX panel_maintenance_time_idx (starts_at, ends_at),
       INDEX panel_maintenance_status_idx (status, starts_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+          `CREATE TABLE IF NOT EXISTS panel_reward_campaigns (
+
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      campaign_key VARCHAR(80) NOT NULL UNIQUE,
+      title VARCHAR(180) NOT NULL,
+      npc_key VARCHAR(32) NOT NULL,
+      server_id INT NOT NULL DEFAULT 0,
+      campaign_type VARCHAR(24) NOT NULL,
+      requirement_key VARCHAR(100) NULL,
+      requirement_value BIGINT NOT NULL DEFAULT 0,
+      claim_scope ENUM('user','player') NOT NULL DEFAULT 'player',
+      coin BIGINT NOT NULL DEFAULT 0,
+      gold BIGINT NOT NULL DEFAULT 0,
+      yen BIGINT NOT NULL DEFAULT 0,
+      active TINYINT(1) NOT NULL DEFAULT 0,
+      starts_at DATETIME NULL,
+      ends_at DATETIME NULL,
+      created_by INT NOT NULL,
+      updated_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX panel_reward_campaign_lookup_idx (npc_key, campaign_type, active, starts_at, ends_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_reward_items (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      campaign_id INT NOT NULL,
+      item_id INT NOT NULL,
+      quantity INT NOT NULL DEFAULT 1,
+      is_lock TINYINT(1) NOT NULL DEFAULT 1,
+      sys INT NOT NULL DEFAULT 0,
+      upgrade INT NOT NULL DEFAULT 0,
+      yen BIGINT NOT NULL DEFAULT 0,
+      expire_days INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX panel_reward_items_campaign_idx (campaign_id, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_reward_item_options (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      reward_item_id INT NOT NULL,
+      option_id INT NOT NULL,
+      min_value INT NOT NULL,
+      max_value INT NOT NULL,
+      INDEX panel_reward_item_options_item_idx (reward_item_id, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_reward_claims (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      campaign_id INT NOT NULL,
+      user_id INT NOT NULL,
+      player_id INT NOT NULL,
+      claim_key VARCHAR(120) NOT NULL UNIQUE,
+      claimed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY panel_reward_claim_unique (campaign_id, user_id, player_id),
+      INDEX panel_reward_claim_campaign_idx (campaign_id, claimed_at),
+      INDEX panel_reward_claim_user_idx (user_id, claimed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   ];
   for (const statement of statements) await pool.query(statement);
+  await ensureSchemaColumn("panel_reward_campaigns", "server_id", "INT NOT NULL DEFAULT 0 AFTER npc_key");
+  await ensureSchemaColumn("panel_reward_claims", "claim_key", "VARCHAR(120) NOT NULL UNIQUE AFTER player_id");
 }
 
 async function getSessionUser(req) {
@@ -472,6 +538,92 @@ async function dashboardData() {
 function requireUser(user, res, role = "viewer") {
   void user; void res; void role;
   return true;
+}
+
+const REWARD_CAMPAIGN_TYPES = new Set(["fancung", "newbie", "topup", "event"]);
+const REWARD_NPCS = new Set(["hung_vuong", "admin"]);
+const REWARD_CLAIM_SCOPES = new Set(["user", "player"]);
+
+function rewardCampaignConfig(body) {
+  const campaignType = String(body.campaignType || "");
+  const npcKey = String(body.npcKey || "");
+  const serverId = Number(body.serverId ?? 0);
+  const claimScope = String(body.claimScope || "player");
+  const title = String(body.title || "").trim().slice(0, 180);
+  const campaignKey = String(body.campaignKey || "").trim().toLowerCase();
+  const requirementKey = String(body.requirementKey || "").trim().slice(0, 100);
+  const requirementValue = Number(body.requirementValue ?? 0);
+  const currencies = Object.fromEntries(["coin", "gold", "yen"].map(key => [key, Number(body[key] ?? 0)]));
+  if (!REWARD_CAMPAIGN_TYPES.has(campaignType) || !REWARD_NPCS.has(npcKey) || !REWARD_CLAIM_SCOPES.has(claimScope)) throw new Error("Loại campaign, NPC hoặc phạm vi claim không hợp lệ.");
+  if ((campaignType === "newbie" && npcKey !== "admin") || ((campaignType === "fancung" || campaignType === "topup") && npcKey !== "hung_vuong")) throw new Error("NPC không đúng với loại campaign.");
+  if (!title || !/^[a-z0-9][a-z0-9_-]{2,79}$/.test(campaignKey)) throw new Error("Tên campaign cần 3–80 ký tự chữ thường, số, _ hoặc -.");
+  if (!Number.isInteger(serverId) || serverId < 0 || serverId > 255) throw new Error("Server ID không hợp lệ.");
+  if (!Number.isSafeInteger(requirementValue) || requirementValue < 0) throw new Error("Mốc điều kiện không hợp lệ.");
+  if (campaignType === "event" && !requirementKey) throw new Error("Campaign sự kiện cần chọn key điểm sự kiện.");
+  if (Object.values(currencies).some(value => !Number.isSafeInteger(value) || value < 0 || value > 2_000_000_000)) throw new Error("Giá trị tiền thưởng không hợp lệ.");
+  const parseDate = (value, label) => { if (!value) return null; const date = new Date(value); if (Number.isNaN(date.getTime())) throw new Error(`${label} không hợp lệ.`); return date; };
+  const startsAt = parseDate(body.startsAt, "Thời điểm bắt đầu");
+  const endsAt = parseDate(body.endsAt, "Thời điểm kết thúc");
+  if (startsAt && endsAt && startsAt >= endsAt) throw new Error("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
+  return { campaignKey, title, npcKey, serverId, campaignType, requirementKey: campaignType === "event" ? requirementKey : null, requirementValue, claimScope, ...currencies, active: body.active === false || String(body.active) === "0" ? 0 : 1, startsAt, endsAt };
+}
+
+function rewardItemsConfig(items) {
+  if (!Array.isArray(items) || items.length > 50) throw new Error("Campaign chỉ nhận tối đa 50 dòng vật phẩm.");
+  return items.map((raw, index) => {
+    const itemId = Number(raw?.itemId);
+    const quantity = Number(raw?.quantity ?? 1);
+    const sys = Number(raw?.sys ?? 0);
+    const upgrade = Number(raw?.upgrade ?? 0);
+    const yen = Number(raw?.yen ?? 0);
+    const expireDays = Number(raw?.expireDays ?? 0);
+    if (!Number.isInteger(itemId) || itemId < 0 || !Number.isInteger(quantity) || quantity < 1 || quantity > 9999 || !Number.isInteger(sys) || sys < 0 || sys > 9 || !Number.isInteger(upgrade) || upgrade < 0 || upgrade > 30 || !Number.isSafeInteger(yen) || yen < 0 || !Number.isSafeInteger(expireDays) || expireDays < 0 || expireDays > 3650) throw new Error(`Dòng vật phẩm ${index + 1} không hợp lệ.`);
+    const options = Array.isArray(raw.options) ? raw.options : [];
+    if (options.length > 20) throw new Error(`Dòng vật phẩm ${index + 1} vượt quá 20 option.`);
+    return { itemId, quantity, isLock: raw.isLock !== false, sys, upgrade, yen, expireDays, options: options.map((option, optionIndex) => { const optionId = Number(option?.optionId); const minValue = Number(option?.minValue); const maxValue = Number(option?.maxValue); if (!Number.isInteger(optionId) || !Number.isInteger(minValue) || !Number.isInteger(maxValue) || minValue < -2_000_000_000 || maxValue > 2_000_000_000 || minValue > maxValue) throw new Error(`Option ${optionIndex + 1} của dòng ${index + 1} không hợp lệ.`); return { optionId, minValue, maxValue }; }) };
+  });
+}
+
+async function rewardCampaignData() {
+  const [campaignRows] = await pool.query(`SELECT c.id, c.campaign_key, c.title, c.npc_key, c.server_id, c.campaign_type, c.requirement_key, c.requirement_value, c.claim_scope, c.coin, c.gold, c.yen, c.active, c.starts_at, c.ends_at, c.created_at, c.updated_at, COALESCE(cl.claim_count, 0) AS claim_count FROM panel_reward_campaigns c LEFT JOIN (SELECT campaign_id, COUNT(*) AS claim_count FROM panel_reward_claims GROUP BY campaign_id) cl ON cl.campaign_id = c.id ORDER BY c.active DESC, c.updated_at DESC`);
+  const [itemRows] = await pool.query(`SELECT ri.id, ri.campaign_id, ri.item_id, i.name AS item_name, i.icon, ri.quantity, ri.is_lock, ri.sys, ri.upgrade, ri.yen, ri.expire_days FROM panel_reward_items ri LEFT JOIN item i ON i.id = ri.item_id ORDER BY ri.campaign_id, ri.id`);
+  const [optionRows] = await pool.query("SELECT id, type, name FROM item_option ORDER BY id");
+  const [itemOptionRows] = await pool.query("SELECT reward_item_id, option_id, min_value, max_value FROM panel_reward_item_options ORDER BY reward_item_id, id");
+  const [claimRows] = await pool.query(`SELECT cl.id, cl.campaign_id, c.title, cl.user_id, cl.player_id, p.name AS player_name, u.username, cl.claimed_at FROM panel_reward_claims cl JOIN panel_reward_campaigns c ON c.id = cl.campaign_id LEFT JOIN players p ON p.id = cl.player_id LEFT JOIN users u ON u.id = cl.user_id ORDER BY cl.claimed_at DESC LIMIT 300`);
+  return { campaigns: campaignRows, items: itemRows, options: optionRows, itemOptions: itemOptionRows, claims: claimRows };
+}
+
+async function saveRewardCampaign(user, body) {
+  const campaign = rewardCampaignConfig(body);
+  const items = rewardItemsConfig(body.items);
+  const itemIds = [...new Set(items.map(item => item.itemId))];
+  const optionIds = [...new Set(items.flatMap(item => item.options.map(option => option.optionId)))];
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    if (itemIds.length) { const [rows] = await connection.query(`SELECT id FROM item WHERE id IN (${itemIds.map(() => "?").join(",")})`, itemIds); if (rows.length !== itemIds.length) throw new Error("Có item không tồn tại trong catalog game."); }
+    if (optionIds.length) { const [rows] = await connection.query(`SELECT id FROM item_option WHERE id IN (${optionIds.map(() => "?").join(",")})`, optionIds); if (rows.length !== optionIds.length) throw new Error("Có option không tồn tại trong catalog game."); }
+    let campaignId = Number(body.id || 0);
+    if (campaignId) {
+      const [existing] = await connection.query("SELECT id, campaign_key FROM panel_reward_campaigns WHERE id = ? LIMIT 1 FOR UPDATE", [campaignId]);
+      if (!existing[0]) throw new Error("Không tìm thấy campaign.");
+      const [claimed] = await connection.query("SELECT id FROM panel_reward_claims WHERE campaign_id = ? LIMIT 1", [campaignId]);
+      if (claimed[0]) throw new Error("Campaign đã có người nhận, không thể sửa cấu hình; hãy tắt và tạo campaign mới.");
+      await connection.query(`UPDATE panel_reward_campaigns SET campaign_key = ?, title = ?, npc_key = ?, server_id = ?, campaign_type = ?, requirement_key = ?, requirement_value = ?, claim_scope = ?, coin = ?, gold = ?, yen = ?, active = ?, starts_at = ?, ends_at = ?, updated_by = ? WHERE id = ? LIMIT 1`, [campaign.campaignKey, campaign.title, campaign.npcKey, campaign.serverId, campaign.campaignType, campaign.requirementKey, campaign.requirementValue, campaign.claimScope, campaign.coin, campaign.gold, campaign.yen, campaign.active, campaign.startsAt, campaign.endsAt, user.id, campaignId]);
+      await connection.query("DELETE FROM panel_reward_item_options WHERE reward_item_id IN (SELECT id FROM panel_reward_items WHERE campaign_id = ?)", [campaignId]);
+      await connection.query("DELETE FROM panel_reward_items WHERE campaign_id = ?", [campaignId]);
+    } else {
+      const [result] = await connection.query(`INSERT INTO panel_reward_campaigns (campaign_key, title, npc_key, server_id, campaign_type, requirement_key, requirement_value, claim_scope, coin, gold, yen, active, starts_at, ends_at, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [campaign.campaignKey, campaign.title, campaign.npcKey, campaign.serverId, campaign.campaignType, campaign.requirementKey, campaign.requirementValue, campaign.claimScope, campaign.coin, campaign.gold, campaign.yen, campaign.active, campaign.startsAt, campaign.endsAt, user.id, user.id]);
+      campaignId = result.insertId;
+    }
+    for (const item of items) {
+      const [result] = await connection.query(`INSERT INTO panel_reward_items (campaign_id, item_id, quantity, is_lock, sys, upgrade, yen, expire_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [campaignId, item.itemId, item.quantity, item.isLock ? 1 : 0, item.sys, item.upgrade, item.yen, item.expireDays]);
+      for (const option of item.options) await connection.query(`INSERT INTO panel_reward_item_options (reward_item_id, option_id, min_value, max_value) VALUES (?, ?, ?, ?)`, [result.insertId, option.optionId, option.minValue, option.maxValue]);
+    }
+    await connection.commit();
+    await audit(user, "rewards", "reward_campaign.saved", "reward_campaign", String(campaignId), "success", { campaignKey: campaign.campaignKey, campaignType: campaign.campaignType, itemCount: items.length });
+    return campaignId;
+  } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }
 
 async function sendItemIcon(res, url) {
@@ -662,6 +814,10 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/runtime-control/status") {
     if (!requireUser(user, res, "analyst")) return;
     writeJson(res, 200, await runtimeControlStatus()); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/reward-campaigns") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await rewardCampaignData()); return;
   }
   if (req.method === "GET" && url.pathname === "/api/options") {
     if (!requireUser(user, res, "operator")) return;
@@ -988,6 +1144,35 @@ async function api(req, res, url) {
       await audit(user, "custom-items", "item.created", "item", String(id), "success", { name, type, gender, level, icon, part, fashion, isUpToUp });
       writeJson(res, 200, { ok: true, id, reloadRequired: true }); return;
     } catch (error) { await conn.rollback(); throw error; } finally { conn.release(); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/reward-campaign-save") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req);
+    const id = Number(body.id || 0);
+    const phrase = id ? `UPDATE REWARD ${id}` : `CREATE REWARD ${String(body.campaignKey || "").toUpperCase()}`;
+    if (body.confirmation !== phrase) throw new Error(`Cần nhập ${phrase} để xác nhận.`);
+    const campaignId = await saveRewardCampaign(user, body);
+    writeJson(res, 200, { ok: true, id: campaignId }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/reward-campaign-state") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id); const active = Number(body.active) ? 1 : 0;
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `${active ? "ENABLE" : "DISABLE"} REWARD ${id}`) throw new Error("Campaign hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE panel_reward_campaigns SET active = ?, updated_by = ? WHERE id = ? LIMIT 1", [active, user.id, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy campaign.");
+    await audit(user, "rewards", active ? "reward_campaign.enabled" : "reward_campaign.disabled", "reward_campaign", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/reward-campaign-delete") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req); const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `DELETE REWARD ${id}`) throw new Error("Campaign hoặc mã xác nhận không hợp lệ.");
+    const [claims] = await pool.query("SELECT id FROM panel_reward_claims WHERE campaign_id = ? LIMIT 1", [id]);
+    if (claims[0]) throw new Error("Campaign đã có người nhận, chỉ được tắt chứ không được xóa.");
+    const connection = await pool.getConnection();
+    try { await connection.beginTransaction(); await connection.query("DELETE FROM panel_reward_item_options WHERE reward_item_id IN (SELECT id FROM panel_reward_items WHERE campaign_id = ?)", [id]); await connection.query("DELETE FROM panel_reward_items WHERE campaign_id = ?", [id]); const [result] = await connection.query("DELETE FROM panel_reward_campaigns WHERE id = ? LIMIT 1", [id]); await connection.commit(); if (!result.affectedRows) throw new Error("Không tìm thấy campaign."); } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+    await audit(user, "rewards", "reward_campaign.deleted", "reward_campaign", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/notice-broadcast") {
     if (!requireUser(user, res, "moderator")) return;
