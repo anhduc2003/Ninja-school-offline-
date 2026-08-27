@@ -1,55 +1,114 @@
-# Ninja School Offline — Server Termux Android
+<p align="center">
+  <img src="docs/assets/ninja-school-banner.png" alt="Ninja School Online" width="100%" />
+</p>
 
-Repository này chứa phần mã nguồn server Java của Ninja School Offline được trích từ `NSO_SETUP_SERVER_FREE.zip`. **GitHub chỉ lưu trữ và phân phối mã nguồn; server không chạy liên tục trên GitHub.** Installer tải archive từ GitHub Release, sau đó build và chạy server trực tiếp trên điện thoại Android bằng Termux.
+<h1 align="center">Ninja School Offline</h1>
 
-## Thành phần đã tích hợp
+<p align="center">
+  <strong>Máy chủ Ninja School chạy local trên Termux/Android, Linux và Windows</strong><br />
+  Java game server · MariaDB · Ninja Control Room · Event & Reward Management
+</p>
 
-| Thành phần | Mục đích |
+<p align="center">
+  <a href="https://github.com/anhduc2003/Ninja-school-offline-/commits/main"><img src="https://img.shields.io/github/last-commit/anhduc2003/Ninja-school-offline-?style=flat-square&color=f5b942" alt="Last commit" /></a>
+  <a href="https://github.com/anhduc2003/Ninja-school-offline-/commits/main"><img src="https://img.shields.io/github/commit-activity/m/anhduc2003/Ninja-school-offline-?style=flat-square&color=4f9cf9" alt="Commit activity" /></a>
+  <a href="https://github.com/anhduc2003/Ninja-school-offline-/issues"><img src="https://img.shields.io/github/issues/anhduc2003/Ninja-school-offline-?style=flat-square&color=8b5cf6" alt="Issues" /></a>
+  <img src="https://img.shields.io/badge/Java-17%2B-ef4444?style=flat-square&logo=openjdk&logoColor=white" alt="Java 17+" />
+  <img src="https://img.shields.io/badge/Termux-Android-22c55e?style=flat-square&logo=android&logoColor=white" alt="Termux Android" />
+  <img src="https://img.shields.io/badge/Control_Room-local--only-06b6d4?style=flat-square" alt="Local only" />
+</p>
+
+<p align="center">
+  <a href="#-bắt-đầu-trong-60-giây">Bắt đầu</a> ·
+  <a href="#-ninja-control-room">Web panel</a> ·
+  <a href="#-quản-lý-event-và-phần-thưởng">Event & Reward</a> ·
+  <a href="admin-panel/README.md">Runbook</a>
+</p>
+
+> **Ninja School Offline** là bộ mã nguồn máy chủ game Java và công cụ vận hành local. GitHub chỉ lưu trữ/phân phối mã nguồn; server được build và chạy trên thiết bị của bạn, không chạy liên tục trên GitHub.
+
+## ✨ Tổng quan
+
+Repository này đóng gói một quy trình triển khai hoàn chỉnh cho server Ninja School: cài dependency, khởi tạo MariaDB, import schema an toàn, build Java bằng Maven, chạy headless và mở **Ninja Control Room** ngay trên cùng thiết bị. Mục tiêu là giúp người vận hành có thể cài đặt nhanh nhưng vẫn kiểm soát được dữ liệu, log, backup và thay đổi gameplay.
+
+| Trụ cột | Có sẵn trong repository |
 |---|---|
-| `src/` | Mã nguồn Java của game server |
-| `Data/` | Dữ liệu bản đồ, hình ảnh, hiệu ứng và ngôn ngữ cần khi server chạy |
-| `SQL/nsoz.sql` | Schema và dữ liệu khởi tạo cho MariaDB/MySQL |
-| `item_roi/` | Các cấu hình vật phẩm theo sự kiện |
-| `config.properties.example` | Cấu hình mẫu, không chứa mật khẩu cá nhân |
-| `install.sh` | Bootstrap toàn bộ quá trình cài đặt và khởi động bằng một lệnh |
-| `run-server.sh` | Khởi động MariaDB và game server bằng một lệnh |
-| `scripts/` | Script cài đặt, khởi động database, build/chạy và dừng server |
-| `admin-panel/` | Web panel offline Node.js, RBAC local, audit SQL, scheduler và hơn 20 mô-đun quản trị |
-| `pom.xml` | Cấu hình Maven; đã cập nhật Lombok/compiler để build được với JDK 17 hoặc 21 |
+| **Game server** | Java server, map, mob, NPC, event, item và dữ liệu runtime trong `src/` và `Data/`. |
+| **Database** | MariaDB/MySQL với schema khởi tạo tại `SQL/nsoz.sql`; script import chỉ chạy khi database còn trống. |
+| **Web panel** | Ninja Control Room local-only với hơn 20 module quản trị, validation, confirmation phrase và audit trail. |
+| **Reward engine** | Gift Code, Fancung, quà tân thủ, nạp tích lũy, quà event và lịch sử claim. |
+| **Launcher** | Cài đặt một lệnh, kiểm tra MariaDB, build JAR, chạy headless, đồng bộ source và quản lý log/PID. |
+| **Tương thích** | Termux/Android là luồng chính; Windows có script start/stop riêng; Linux có thể chạy các script Bash tương ứng. |
 
-Các chương trình Windows, MariaDB `winx64`, NetBeans, Notepad, WinRAR, archive nguồn lồng nhau và JAR build sẵn **không được đưa vào repository**. Maven sẽ tải dependency và tạo JAR trên thiết bị chạy server.
+## 🧭 Mục lục
 
-## Yêu cầu
+- [Bắt đầu trong 60 giây](#-bắt-đầu-trong-60-giây)
+- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
+- [Cài đặt đầy đủ](#-cài-đặt-đầy-đủ)
+- [Cấu hình database](#-cấu-hình-database)
+- [Lệnh vận hành](#-lệnh-vận-hành)
+- [Ninja Control Room](#-ninja-control-room)
+- [Quản lý Event và Phần thưởng](#-quản-lý-event-và-phần-thưởng)
+- [Cây thư mục](#-cây-thư-mục)
+- [Cập nhật source](#-cập-nhật-source)
+- [Xử lý sự cố](#-xử-lý-sự-cố)
+- [An toàn và giới hạn](#-an-toàn-và-giới-hạn)
 
-Điện thoại cần cài Termux từ nguồn chính thức hoặc F-Droid, có bộ nhớ trống phù hợp với thư mục dữ liệu game và được phép chạy nền. Quy trình cài package của Termux sử dụng `pkg`, một wrapper của APT được khuyến nghị trong tài liệu Termux [3]. Server cần OpenJDK 17 trở lên, Maven, Git và MariaDB. Repository đặt bytecode mục tiêu Java 17 để tương thích rộng hơn; bản build đã được kiểm thử bằng JDK 21.
+## 🚀 Bắt đầu trong 60 giây
 
-## Cài đặt toàn bộ bằng một lệnh
-
-Mở Termux và dán đúng một lệnh sau:
+Trên Termux, chạy đúng một lệnh sau:
 
 ```bash
 curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.8/install-v1.4.8.sh | bash
 ```
 
-Lệnh này tự cập nhật package, cài curl/OpenJDK/Maven/MariaDB, tải một archive từ GitHub Release, tạo cấu hình, khởi tạo MariaDB, import SQL nếu database còn trống, build JAR và khởi động server ở chế độ headless. Script không cần quyền root. Nếu Termux yêu cầu quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage` trước; thông thường dự án vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
+Sau khi cài xong, mở panel tại [`http://127.0.0.1:18080`](http://127.0.0.1:18080). Launcher sẽ tự cài package cần thiết, chuẩn bị MariaDB, import SQL nếu database chưa có bảng, build JAR và khởi động game ở chế độ headless.
 
-Nếu muốn cài vào thư mục khác, vẫn dùng một lệnh với biến môi trường:
+> **Lưu ý:** Nếu Termux hỏi quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage`. Thông thường server vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
+
+## 🧰 Yêu cầu hệ thống
+
+| Môi trường | Yêu cầu |
+|---|---|
+| **Termux/Android** | Termux từ nguồn chính thức hoặc F-Droid, OpenJDK 17+, Maven, Git, MariaDB và đủ dung lượng cho thư mục `Data/`. |
+| **Windows** | Java 17+, Maven, Node.js, MariaDB service và Git Bash hoặc môi trường chạy script tương thích. |
+| **Linux** | OpenJDK 17+, Maven, Git, MariaDB và các tiện ích Bash cơ bản. |
+
+Repository đặt target bytecode Java 17 để tương thích rộng hơn; bản build đã được kiểm thử với JDK 21. Điện thoại cần được phép chạy nền nếu muốn server hoạt động lâu; Android có thể giới hạn CPU, pin, mạng hoặc tiến trình background.
+
+## 📦 Cài đặt đầy đủ
+
+### Cài vào thư mục mặc định
+
+```bash
+curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.8/install-v1.4.8.sh | bash
+```
+
+### Cài vào thư mục tùy chọn
 
 ```bash
 curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download/v1.4.8/install-v1.4.8.sh | INSTALL_DIR="$HOME/ninja-server" bash
 ```
 
-Script tải lại Release khi chạy lại; nếu thư mục đích là bản cài đặt cũ, script dừng server, tải/kiểm tra archive trước rồi giữ lại **toàn bộ runtime local được ignore**: `config.properties`, `.termux` (bao gồm database local), `logs`, `admin-panel/config.local.json`, `admin-panel/data`, backup và report. Source mới chỉ thay code tracked; PID stale bị xóa để launcher tạo tiến trình mới. Nếu thư mục đích không phải bản cài đặt của server, script dừng để tránh ghi đè dữ liệu. Sau lần cài đầu tiên, bạn có thể xem log bằng `tail -f ~/Ninja-school-offline-/logs/server.log` và dừng server bằng `bash ~/Ninja-school-offline-/scripts/stop-server.sh`.
+Script không cần quyền root. Khi chạy lại trên một bản cài hợp lệ, script dừng tiến trình cũ, kiểm tra archive trước khi thay source và giữ lại runtime local như `config.properties`, `.termux`, `logs`, `admin-panel/config.local.json`, backup và report. Script không tự import lại SQL vào database đã có bảng và không reset dữ liệu người chơi.
 
-## Cấu hình database
+Nếu muốn tự thực hiện từng bước:
 
-Mở cấu hình bằng `nano`:
+```bash
+bash scripts/init-db.sh       # Khởi động MariaDB, tạo database và import SQL nếu còn trống
+mvn test                      # Kiểm tra build/test Java
+bash run-server.sh            # Khởi động MariaDB, game server, panel và scheduler
+```
+
+## 🗄️ Cấu hình database
+
+Mở file cấu hình local:
 
 ```bash
 nano config.properties
 ```
 
-Cấu hình tối thiểu cho MariaDB local là:
+Cấu hình tối thiểu cho MariaDB local:
 
 ```properties
 db.host=127.0.0.1
@@ -61,142 +120,136 @@ db.driver=com.mysql.cj.jdbc.Driver
 open.historySQL=true
 ```
 
-Không commit `config.properties` lên GitHub. File này đã nằm trong `.gitignore`; chỉ `config.properties.example` được quản lý trong repository. Nếu sử dụng mật khẩu hoặc database từ máy khác, hãy thay đổi các trường tương ứng và bảo đảm thiết bị có thể kết nối tới máy đó.
+Không commit `config.properties` lên GitHub. File này nằm trong `.gitignore`; chỉ `config.properties.example` được quản lý trong repository. Nếu dùng MariaDB ở máy khác, chỉ kết nối qua mạng riêng đáng tin cậy và không public database trực tiếp ra Internet.
 
-## Khởi tạo database lần đầu
+## ▶️ Lệnh vận hành
 
-Chạy:
+| Tác vụ | Lệnh |
+|---|---|
+| Khởi động toàn bộ stack | `bash run-server.sh` |
+| Khởi động bằng đường dẫn tuyệt đối | `bash ~/Ninja-school-offline-/run-server.sh` |
+| Điều chỉnh heap JVM | `JAVA_OPTS='-Xms128m -Xmx512m' bash run-server.sh` |
+| Theo dõi log game | `tail -f logs/server.log` |
+| Dừng game server | `bash scripts/stop-server.sh` |
+| Dừng MariaDB | `bash scripts/stop-db.sh` |
+| Dừng panel và scheduler | `bash admin-panel/stop-panel.sh` |
+| Khởi động Windows | `scripts\\windows-start-stack.cmd` |
+| Dừng Windows | `scripts\\windows-stop-stack.cmd` |
 
-```bash
-bash scripts/init-db.sh
-```
+Launcher mặc định dùng cổng game `14444` và panel `18080`. Log chính nằm tại `logs/server.log`, `logs/admin-panel.log`, `logs/mariadb.log`; PID game nằm tại `.termux/server.pid`.
 
-Script sẽ khởi động MariaDB, tạo database `nsoz` nếu chưa tồn tại và import `SQL/nsoz.sql` **chỉ khi database chưa có bảng**. Khi database đã có bảng, script bỏ qua import để tránh ghi đè dữ liệu người chơi. Vì vậy, trước khi import vào database đang sử dụng, hãy sao lưu dữ liệu nếu cần. Bản SQL trong repository đã loại tài khoản `admin` mẫu có mật khẩu rõ ràng từ archive gốc; hãy tạo tài khoản riêng qua quy trình đăng ký/web hiện có hoặc công cụ quản trị của bạn, rồi đặt mật khẩu mạnh.
+## 🖥️ Ninja Control Room
 
-Bản cài đặt cũng tạo `.termux/mariadb.cnf` với `feedback=OFF`, `feedback_url=` và `innodb_use_native_aio=0`. MariaDB được khởi động bằng `mariadbd-safe` thay vì `--daemonize`, phù hợp với lệnh khởi động mà gói Termux in ra. Thiết lập này xử lý lỗi MariaDB trên một số bản Termux/Android khi feedback plugin không lấy được MAC address và làm InnoDB khởi tạo thất bại [4].
+Ninja Control Room là web panel chạy **local-only** trên `127.0.0.1:18080`. Panel không sử dụng login, password, cookie session hoặc tài khoản Admin game; mọi thao tác ghi vẫn cần CSRF local, confirmation phrase, validation, parameterized SQL và audit append-only.
 
-## Lệnh chạy server game
+> **Không mở cổng `18080` hoặc MariaDB ra LAN/Internet.** Bất kỳ ứng dụng nào chạy trên cùng thiết bị đều có thể truy cập endpoint local-only.
 
-Sau khi cài đặt xong, dùng lệnh sau để khởi động cả MariaDB và game server:
+### Các nhóm quản trị
 
-```bash
-bash ~/Ninja-school-offline-/run-server.sh
-```
+| Nhóm | Module tiêu biểu | Mục đích |
+|---|---|---|
+| **Người chơi** | Người chơi, Tài khoản, Kiểm duyệt, Túi đồ, Tiền tệ | Tra cứu, khóa/mở tài khoản và chỉnh state offline có kiểm soát. |
+| **Nội dung** | Vật phẩm tùy biến, Cửa hàng, Event Control, Quái & Boss | Quản lý catalog, shop, event, metadata quái và asset. |
+| **Phần thưởng** | Phần thưởng, Reward Campaigns, Lịch sử reward | Gift Code, Fancung, quà tân thủ, nạp tích lũy, event reward và đối soát claim. |
+| **Vận hành** | Thông báo, Bảo trì, Sức khỏe server, Sự cố | Health check, runbook bảo trì, audit và broadcast runtime. |
+| **Phân tích** | Bảng xếp hạng, Phân tích, Audit trail, Sao lưu | Theo dõi KPI, top, lịch sử thao tác và backup local. |
 
-Nếu đang đứng trong thư mục dự án, có thể dùng:
+### Nguyên tắc áp dụng thay đổi
 
-```bash
-bash run-server.sh
-```
+Các thao tác chỉnh item, shop, monster và option có thể cần reload cache hoặc restart Java vì game giữ dữ liệu trong bộ nhớ. Chỉnh nhân vật và hành trang chỉ cho phép khi nhân vật offline; dữ liệu JSON cũ lỗi sẽ bị khóa editor thay vì tự động ghi đè. Panel không giả vờ dừng Java chỉ bằng SQL: maintenance chỉ tạo draft, approval và runbook.
 
-Launcher sẽ tự kiểm tra MariaDB, build JAR nếu chưa có, rồi chạy server ở chế độ **headless** để không tạo cửa sổ Swing. Nó cũng khởi động Ninja Control Room và scheduler local. MariaDB được kiểm tra qua socket trước; nếu instance cũ không healthy, launcher dừng instance đó có kiểm tra PID rồi mới tạo instance mới. Điều này ngăn lỗi Aria/InnoDB lock do chạy hai MariaDB cùng datadir. Log game nằm tại `~/Ninja-school-offline-/logs/server.log`, log panel nằm tại `~/Ninja-school-offline-/logs/admin-panel.log`, log MariaDB nằm tại `~/Ninja-school-offline-/logs/mariadb.log`, và PID game nằm tại `~/Ninja-school-offline-/.termux/server.pid`.
+## 🎁 Quản lý Event và Phần thưởng
 
-### Đồng bộ source GitHub lúc khởi động
+### Reward Campaign Center
 
-Mỗi lần chạy `run-server.sh`, launcher kiểm tra `origin/main` trước khi MariaDB/JVM khởi động. Khi source local sạch và commit hiện tại có thể **fast-forward** đến GitHub, launcher tự đồng bộ source, xóa JAR cũ để Maven build lại và làm mới marker dependency panel. Database MariaDB, `config.properties`, cấu hình/session panel, backup và logs là dữ liệu local bị ignore nên không bị Git ghi đè.
+Mục **Reward Campaigns** dùng wizard và catalog trực quan, không yêu cầu nhập JSON thủ công.
 
-Nếu một bản cài Release hợp lệ thiếu thư mục `.git`, launcher v1.4.3 có thể tự tạo metadata Git rồi so source với tag trong `.termux/release-installed` trước khi fast-forward. Chỉ khi source trùng tag Release và không có file source local mới thì bootstrap mới chạy; marker sai, source đã sửa hoặc dữ liệu GitHub không tải được sẽ bị bỏ qua an toàn. Cơ chế này không reset/merge source local không xác minh được.
+| Loại campaign | NPC | Điều kiện runtime |
+|---|---|---|
+| **Fancung** | Hùng Vương | Trạng thái Fancung của tài khoản/nhân vật. |
+| **Quà tân thủ** | Admin | Cờ `received_first_gift` chưa được nhận. |
+| **Nạp tích lũy** | Hùng Vương | Tổng nạp `tongnap` đạt mốc Coin cấu hình. |
+| **Quà sự kiện** | NPC được chọn | `eventPoint` theo key và mốc điểm cấu hình. |
 
-Nếu GitHub không kết nối được, có thay đổi source local chưa commit, history diverged hoặc game server đang chạy, launcher ghi lý do vào `logs/sync.log` rồi dùng source local hiện có — không `reset`, không xóa database và không tự merge. Có thể tắt kiểm tra cập nhật cho một lần chạy:
+Trong wizard, quản trị viên có thể tìm item theo tên/ID từ catalog, chọn số lượng, khóa, system, upgrade, hạn ngày, option theo tên với min/max, Coin/Lượng/Yên, thời gian hiệu lực, server scope và claim scope. `server_id = 0` áp dụng toàn bộ server; campaign đã có claim chỉ được tắt để bảo toàn đối soát.
 
-```bash
-NSO_AUTO_SYNC=0 bash ~/Ninja-school-offline-/run-server.sh
-```
+Claim được ghi vào các bảng chuẩn hóa `panel_reward_campaigns`, `panel_reward_items`, `panel_reward_item_options` và `panel_reward_claims`. Runtime kiểm tra thời gian, điều kiện, đủ slot túi, item/option tồn tại và `claim_key` duy nhất trước khi cấp quà.
 
-Để tắt riêng bước bootstrap metadata trên bản Release không có `.git`, dùng `NSO_SYNC_BOOTSTRAP=0`. Nếu auto-update bị bỏ qua, xem lý do chính xác bằng:
+### Gift Code Control
 
-```bash
-tail -n 50 ~/Ninja-school-offline-/logs/sync.log
-```
+Gift Code Control quản lý code, tiền tệ, reward item/options, khóa/upgrade/hạn item, thời gian hiệu lực, quota tổng, bật/tắt và lịch sử redemption. Java kiểm tra lifecycle và tăng quota atomically; code tự hết hạn ngay cả khi panel tắt. Launcher tự kiểm tra migration lifecycle trước khi mở Java/panel.
 
-Theo dõi log:
+### Event Control
 
-```bash
-tail -f logs/server.log
-```
+Event Control tạo plan pending cho event class, thời hạn và drop table. Drop item phải tồn tại trong catalog; plan chỉ áp dụng sau khi Java được dừng rồi chạy lại. Event **Lễ hội Sao Đêm** có ID `9`, drop lồng đèn sao, đổi quà và bảng top `star_lantern`. Chi tiết giới hạn runtime nằm trong [`admin-panel/README.md`](admin-panel/README.md).
 
-Mặc định server lắng nghe cổng `14444`. Nếu cần giảm hoặc tăng heap JVM theo RAM điện thoại, đặt `JAVA_OPTS` trước khi chạy, ví dụ:
-
-```bash
-JAVA_OPTS='-Xms128m -Xmx512m' bash run-server.sh
-```
-
-Dừng game server bằng:
-
-```bash
-bash scripts/stop-server.sh
-```
-
-Nếu cần dừng cả MariaDB:
-
-```bash
-bash scripts/stop-db.sh
-```
-
-`start-server.sh` gọi `termux-wake-lock` nếu tiện ích đó có sẵn để hạn chế việc Android ngủ khi server đang chạy. Khi dừng server, script gọi `termux-wake-unlock` nếu có.
-
-## Web panel offline: Ninja Control Room
-
-Sau khi gọi `run-server.sh`, panel được mở cùng máy với game server tại:
+## 🗂️ Cây thư mục
 
 ```text
-http://127.0.0.1:18080
+.
+├── src/                         # Java game server
+├── Data/                        # Map, mob, NPC, item sprite, effect và language asset
+├── SQL/nsoz.sql                 # Schema/dữ liệu khởi tạo MariaDB
+├── admin-panel/                 # Ninja Control Room, scheduler, test và runbook
+│   ├── public/                  # Frontend web panel
+│   ├── server.mjs               # Local API, schema panel và audit boundary
+│   └── README.md                # Runbook vận hành chi tiết
+├── item_roi/                    # Cấu hình vật phẩm theo event
+├── scripts/                     # Init DB, start/stop, Windows runbook
+├── config.properties.example    # Cấu hình game mẫu, không chứa secret
+├── install.sh                   # Bootstrap cài đặt
+├── run-server.sh                # Launcher toàn bộ stack
+└── pom.xml                      # Maven build Java
 ```
 
-Panel được ép bind `127.0.0.1`, vì vậy không public cổng quản trị hoặc MariaDB ra Internet. Từ bản local-only, panel **mở trực tiếp không có đăng nhập, mật khẩu, cookie session hoặc RBAC**. Mở `http://127.0.0.1:18080` để dùng ngay trên chính thiết bị. Không mở port `18080` ra LAN/Internet hoặc reverse proxy endpoint này, vì mọi ứng dụng chạy trên cùng thiết bị có thể truy cập panel.
+## 🔄 Cập nhật source
 
-Các thao tác ghi vẫn cần token CSRF local theo tiến trình, confirmation phrase, allowlist SQL/validation và audit với actor `local-only`. Account game Admin, role ID 1 và mật khẩu game không còn liên quan đến quyền vào panel. Các bảng panel-auth cũ có thể được giữ nguyên để bảo toàn lịch sử; local-only không sử dụng chúng.
+Mỗi lần chạy `run-server.sh`, launcher kiểm tra `origin/main` trước khi MariaDB/JVM khởi động. Khi source local sạch và có thể fast-forward đến GitHub, launcher tự đồng bộ source, xóa JAR cũ để Maven build lại và làm mới marker dependency panel.
 
-Panel có 23 mô-đun được phân nhóm cho người chơi, tài khoản, moderation, inventory, currency, rewards/lịch sử redemption, custom item, shop, Event Control, rate, monster/boss, notice, maintenance, health, incident, audit, backup, leaderboard, analytics, jobs và bảo mật tài khoản. Các thao tác có write hiện được map vào schema SQL thật của game như `users`, `players`, `item`, `shopcoin_tb1`, `monster`, `gift_codes` và `options`; chúng dùng parameterized query, transaction, confirmation phrase và audit append-only. **Chỉnh nhân vật** dùng form số trực quan; **Hành trang** dùng thẻ theo từng slot với tìm item catalog, số lượng, khóa, hạn dùng, upgrade và option chỉ số—panel tự serialize JSON đúng contract game. Nếu JSON cũ lỗi, editor bị khóa và không tự ghi đè dữ liệu. Event points vẫn chỉ đọc do state runtime phức tạp. Maintenance chỉ quản lý draft/approval/runbook; panel không giả vờ dừng Java server chỉ bằng SQL. Các thao tác item/shop/monster/options có thể cần restart hoặc reload cache Java để áp dụng vào tiến trình game đang giữ dữ liệu trong bộ nhớ.
+Nếu GitHub không kết nối được, source local có thay đổi chưa commit, history bị diverge hoặc Java đang chạy, launcher ghi lý do vào `logs/sync.log` rồi dùng source local hiện có. Cơ chế này không reset, không xóa database và không tự merge source không xác minh được.
 
-**Cửa hàng NPC** nay mở theo luồng: chọn cửa hàng → tìm/chọn item trong catalog → chọn Coin/Lượng/Yên và giá → khóa/hệ/hạn dùng → thêm option chỉ số theo từng dòng → lưu. Danh sách hàng hóa chỉ hiển thị store đang chọn, có tìm nhanh, sửa và xóa. Backend kiểm tra template item, store và mọi option ID trước khi ghi `store_data`; sau đó dừng/chạy lại Java hoặc reload ShopManager theo quy trình vận hành để nạp cache mới.
-
-**Event Control** lưu event class, hạn kết thúc và drop JSON thành plan `pending`, không chuyển event khi Java đang chạy. Drop JSON chỉ chấp nhận item ID tồn tại trong SQL catalog. Sau confirmation phrase, dừng Java bằng `bash scripts/stop-server.sh`, rồi chạy `bash run-server.sh`; launcher backup `config.properties`, áp dụng plan và nạp event ở lần boot kế tiếp. Source thêm **Lễ hội Sao Đêm** (`Exe_Z.event.StarFestival`, ID `9`): lồng đèn sao rơi từ quái, đổi 10 lồng đèn lấy Huyền tinh ngọc và tính top `star_lantern`. Chi tiết asset, giới hạn event hard-code và Windows runbook nằm trong [`admin-panel/README.md`](admin-panel/README.md).
-
-**Gift Code Control** quản lý code, tiền tệ, reward item/options, khóa/upgrade/hạn item, thời gian bắt đầu/kết thúc, quota tổng, bật/tắt và history redemption. Java kiểm tra lifecycle và tăng quota atomically khi người chơi nhập code, nên code tự đến lịch/hết hạn ngay cả khi panel tắt; không dùng scheduler. Từ launcher v1.4.6, mỗi lần `run-server.sh` chạy nó tự kiểm tra migration lifecycle sau khi MariaDB local sẵn sàng, trước Java/panel. Migration idempotent—chỉ thêm cột/index còn thiếu và không import/reset dữ liệu cũ.
+Tắt auto-sync cho một lần chạy:
 
 ```bash
-bash run-server.sh
+NSO_AUTO_SYNC=0 bash run-server.sh
 ```
 
-Nếu launcher báo migration không thành công (ví dụ credential local không có quyền `ALTER`), xem `tail -n 50 logs/gift-code-migration.log` rồi chạy lại đúng một lệnh migration bằng user MariaDB local có quyền ALTER: `bash scripts/migrate-gift-code-lifecycle.sh`. Không sửa/xóa Gift Code đã có redemption; disable code cũ rồi tạo code mới để giữ đối soát.
-
-Lịch local chạy bằng `admin-panel/start-scheduler.sh`, được launcher gọi sau panel. Job khởi tạo ở trạng thái **draft/disabled**; chỉ admin có thể phê duyệt và bật trong trang `Tác vụ định kỳ`. Scheduler chỉ tự thực thi `health_check`, `daily_report` và `cleanup`. Event hoặc maintenance transition được ghi audit là blocked cho đến khi có runbook nghiệp vụ riêng, tránh thay đổi gameplay không được đánh giá.
-
-Để dừng riêng panel và scheduler:
+Tắt riêng bootstrap metadata trên bản Release không có `.git`:
 
 ```bash
-bash admin-panel/stop-panel.sh
+NSO_SYNC_BOOTSTRAP=0 bash run-server.sh
 ```
 
-Chi tiết cấu hình local, role, cổng và giới hạn vận hành xem tại [`admin-panel/README.md`](admin-panel/README.md).
+## 🩺 Xử lý sự cố
 
-Trên Windows đã cài Java 17+, Maven, Node.js và MariaDB service, có thể dùng:
+| Hiện tượng | Kiểm tra |
+|---|---|
+| MariaDB không khởi động | Xem `logs/mariadb.log`; bảo đảm không có instance cũ dùng cùng datadir và chạy lại `bash scripts/init-db.sh`. |
+| Panel báo database offline | Kiểm tra `db.host`, `db.port`, credential trong `config.properties` và xem `logs/admin-panel.log`. |
+| Java build lỗi | Kiểm tra JDK/Maven, chạy `mvn test` và xem dependency cache; repository target Java 17+. |
+| Gift Code migration lỗi | Xem `logs/gift-code-migration.log`, bảo đảm user MariaDB có quyền `ALTER`, rồi chạy `bash scripts/migrate-gift-code-lifecycle.sh`. |
+| Panel không cập nhật source | Xem `tail -n 50 logs/sync.log`; kiểm tra source local sạch và Java đã dừng. |
+| Android dừng server nền | Giữ Termux không bị battery optimization, cân nhắc `termux-wake-lock` và theo dõi `logs/server.log`. |
 
-```bat
-scripts\windows-start-stack.cmd
-```
+## 🔐 An toàn và giới hạn
 
-Script mặc định dùng Windows service tên `MariaDB`; nếu service dùng tên khác, đặt biến `NSO_MYSQL_SERVICE` trước khi chạy. Dừng Java/panel/scheduler bằng `scripts\windows-stop-stack.cmd`; script sẽ hỏi riêng trước khi thực thi `net stop` cho MariaDB, tránh cắt database ngoài ý muốn. Runbook kiểm thử Windows nằm tại [`admin-panel/WINDOWS-RUNBOOK.md`](admin-panel/WINDOWS-RUNBOOK.md).
+Không commit password, token runtime, `config.properties`, database local, backup hoặc log lên GitHub. Web panel và MariaDB chỉ nên bind local; nếu cần server public 24/7, nên dùng Linux/hosting riêng thay vì điện thoại cá nhân.
 
-## Cập nhật mã nguồn từ GitHub Release
+Lớp khởi động gốc có giao diện AWT/Swing. Trên Termux headless, cửa sổ Swing bị tắt nhưng luồng game server vẫn được khởi tạo; các chức năng quản trị cũ phụ thuộc cửa sổ Swing không dùng được trong chế độ này.
 
-Chạy lại đúng lệnh cài đặt một dòng để tải bản Release mới nhất mà installer đang chỉ tới. Script giữ lại `config.properties`, dừng tiến trình cũ trước khi thay runtime và không import lại SQL nếu database đã có bảng. Khi thay đổi schema, không tự động import lại SQL vào database đang có dữ liệu; hãy đánh giá migration riêng.
+Bộ mã nguồn và dữ liệu lớn; GitHub cảnh báo với file trên 50 MiB và chặn file đơn trên 100 MiB. Nếu bổ sung binary lớn, nên dùng Git LFS hoặc GitHub Releases thay vì commit archive trực tiếp [1] [2].
 
-## Lưu ý quan trọng
+## 📚 Tài liệu liên quan
 
-Lớp khởi động gốc tạo giao diện AWT/Swing. Termux thông thường không có display server, nên repository đã thêm kiểm tra `GraphicsEnvironment.isHeadless()` và cờ `-Dninja.headless=true`; khi chạy trên Termux, cửa sổ quản trị bị tắt nhưng luồng game server vẫn được khởi tạo. Các chức năng quản trị trước đây nằm trong cửa sổ Swing sẽ không sử dụng được ở chế độ này.
-
-Bộ mã nguồn và dữ liệu hiện chiếm khoảng 298 MB trong working tree. GitHub cảnh báo với file lớn hơn 50 MiB và chặn file đơn lớn hơn 100 MiB; repository này đã loại các archive/JAR lớn và không có file riêng nào vượt giới hạn nói trên [1]. GitHub khuyến nghị repository nhỏ hơn 1 GB và strongly recommends dưới 5 GB [1]. Nếu bổ sung binary lớn trong tương lai, dùng Git LFS hoặc GitHub Releases thay vì commit archive trực tiếp [1] [2].
-
-Server game và MariaDB chạy trên điện thoại sẽ tiêu thụ CPU, RAM, pin và dung lượng lưu trữ. Android có thể dừng tiến trình nền hoặc thu hồi mạng khi Termux bị giới hạn; để server công khai ổn định 24/7, nên dùng máy chủ Linux/hosting riêng thay vì phụ thuộc vào điện thoại cá nhân.
+- [`admin-panel/README.md`](admin-panel/README.md) — cấu hình panel, quyền, audit, event, reward và runbook vận hành.
+- [`admin-panel/WINDOWS-RUNBOOK.md`](admin-panel/WINDOWS-RUNBOOK.md) — kiểm thử stack trên Windows.
+- [`admin-panel/REWARD_CAMPAIGN_DESIGN.md`](admin-panel/REWARD_CAMPAIGN_DESIGN.md) — thiết kế Reward Campaign Center.
+- [`config.properties.example`](config.properties.example) — danh sách cấu hình game mẫu.
+- [`SQL/nsoz.sql`](SQL/nsoz.sql) — schema database khởi tạo.
 
 ## Tham chiếu
 
 [1]: https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github "GitHub — About large files on GitHub"
-
 [2]: https://docs.github.com/en/repositories/creating-and-managing-repositories/repository-limits "GitHub — Repository limits"
-
 [3]: https://wiki.termux.dev/wiki/Package_Management "Termux Wiki — Package Management"
-
 [4]: https://github.com/termux/termux-packages/issues/21556 "Termux packages — MariaDB initialization issue #21556"
