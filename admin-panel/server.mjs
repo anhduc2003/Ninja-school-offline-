@@ -12,6 +12,7 @@ import { hashGamePassword, validateGameUsername } from "./lib/game-account.mjs";
 import { existingItemIds, validateInventory, validatePlayerStats } from "./lib/player-state.mjs";
 import { resolveBootstrapPassword } from "./lib/bootstrap-password.mjs";
 import { EVENT_CATALOG, findEvent, readEventAsset, readEventPlan, validateDropTable, writePendingEventPlan } from "./lib/event-control.mjs";
+import { ECONOMY_RULES, detectEconomySignals, parseHistoryBalanceDelta } from "./lib/economy-monitor.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "..");
@@ -54,6 +55,8 @@ const modules = [
   ["backups", "Sao lưu", "Kiểm soát", "Tạo MariaDB dump local và retention", "admin"],
   ["leaderboards", "Bảng xếp hạng", "Phân tích", "Danh sách top và refresh reference", "analyst"],
   ["analytics", "Phân tích", "Phân tích", "KPI player, economy và báo cáo vận hành", "analyst"],
+  ["economy-monitor", "Kinh tế & cảnh báo", "Phân tích", "Dòng tiền, lịch sử giao dịch và tín hiệu bất thường cần GM review", "analyst"],
+  ["inbox", "Hộp thư hệ thống", "Vận hành", "Theo dõi notification bền vững, seller nhận mail và trạng thái delivery", "analyst"],
   ["jobs", "Tác vụ định kỳ", "Kiểm soát", "Health check, cleanup, report và transition đã phê duyệt", "admin"],
   ["security", "Chế độ local-only", "Kiểm soát", "Không có đăng nhập; panel chỉ lắng nghe trên chính thiết bị", "viewer"],
 ].map(([id, label, group, description, role]) => ({ id, label, group, description, role }));
@@ -145,12 +148,64 @@ async function shinwaData(searchParams) {
   let where = "s.server_id = ?";
   if (q) { where += " AND (s.seller LIKE CONCAT('%', ?, '%') OR i.name LIKE CONCAT('%', ?, '%') OR CAST(s.id AS CHAR) = ?)"; params.push(q, q, q); }
   if (["0", "1", "2"].includes(status)) { where += " AND s.status = ?"; params.push(Number(status)); }
-  const [rows] = await pool.query(`SELECT s.id, s.server_id, s.seller, s.price, s.status, s.time, s.item, n.notified_at AS expiry_notified_at, JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS item_id, i.name AS item_name, i.icon, i.type AS item_type, i.level AS item_level FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) LEFT JOIN panel_shinwa_expiry_notifications n ON n.shinwa_id = s.id AND n.server_id = s.server_id WHERE ${where} ORDER BY s.status ASC, s.id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+  const [rows] = await pool.query(`SELECT s.id, s.server_id, s.seller, s.price, s.status, s.time, s.item, n.notified_at AS expiry_notified_at, m.delivery_status AS expiry_delivery_status, m.delivered_at AS expiry_delivered_at, m.read_at AS expiry_read_at, JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS item_id, i.name AS item_name, i.icon, i.type AS item_type, i.level AS item_level FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) LEFT JOIN panel_shinwa_expiry_notifications n ON n.shinwa_id = s.id AND n.server_id = s.server_id LEFT JOIN panel_player_inbox m ON m.server_id = s.server_id AND m.source_type = 'shinwa_expiry' AND m.source_id = CAST(s.id AS CHAR) WHERE ${where} ORDER BY s.status ASC, s.id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
   const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) WHERE ${where}`, params);
   const [optionRows] = await pool.query("SELECT id, name FROM item_option ORDER BY id");
   const optionNames = new Map(optionRows.map(row => [Number(row.id), row.name]));
-  const normalized = rows.map(row => { const item = parseShinwaItem(row.item, optionNames); return { id: row.id, server_id: row.server_id, seller: row.seller, price: row.price, status: row.status, status_label: SHINWA_STATUS_LABELS[row.status] || `Trạng thái #${row.status}`, expiry_notified_at: row.expiry_notified_at || null, expiry_notification_label: row.expiry_notified_at ? "Đã gửi hộp thư" : "Chưa gửi hộp thư", time: row.time, item_id: item.itemId || Number(row.item_id || 0), item_name: row.item_name || `Vật phẩm #${item.itemId || row.item_id || "?"}`, icon: row.icon, item_type: row.item_type, item_level: row.item_level, quantity: item.quantity, is_lock: item.isLock, sys: item.sys, upgrade: item.upgrade, yen: item.yen, expire: item.expire, options: item.options, parse_error: item.parseError }; });
+  const normalized = rows.map(row => { const item = parseShinwaItem(row.item, optionNames); const deliveryLabel = row.expiry_delivery_status === "delivered" ? "Đã gửi hộp thư" : row.expiry_delivery_status === "pending" ? "Đã ghi hộp thư · Chờ delivery" : row.expiry_delivery_status === "failed" ? "Delivery lỗi" : "Chưa gửi hộp thư"; return { id: row.id, server_id: row.server_id, seller: row.seller, price: row.price, status: row.status, status_label: SHINWA_STATUS_LABELS[row.status] || `Trạng thái #${row.status}`, expiry_notified_at: row.expiry_notified_at || null, expiry_delivery_status: row.expiry_delivery_status || null, expiry_delivered_at: row.expiry_delivered_at || null, expiry_read_at: row.expiry_read_at || null, expiry_notification_label: deliveryLabel, time: row.time, item_id: item.itemId || Number(row.item_id || 0), item_name: row.item_name || `Vật phẩm #${item.itemId || row.item_id || "?"}`, icon: row.icon, item_type: row.item_type, item_level: row.item_level, quantity: item.quantity, is_lock: item.isLock, sys: item.sys, upgrade: item.upgrade, yen: item.yen, expire: item.expire, options: item.options, parse_error: item.parseError }; });
   return { rows: normalized, total: Number(countRows[0]?.total || 0), page, limit, statuses: SHINWA_STATUS_LABELS };
+}
+
+function boundedHours(searchParams) {
+  const hours = Number(searchParams.get("hours") || 24);
+  return Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24;
+}
+
+async function upsertEconomySignals(signals) {
+  for (const signal of signals) {
+    await pool.query(`INSERT INTO panel_economy_alerts (dedupe_key, rule_key, severity, status, server_id, player_id, user_id, player_name, username, title, description, evidence) VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE rule_key = VALUES(rule_key), severity = VALUES(severity), player_id = VALUES(player_id), user_id = VALUES(user_id), player_name = VALUES(player_name), username = VALUES(username), title = VALUES(title), description = VALUES(description), evidence = VALUES(evidence), updated_at = CURRENT_TIMESTAMP`, [signal.dedupe_key, signal.rule_key, signal.severity, signal.server_id, signal.player_id, signal.user_id, signal.player_name, signal.username, signal.title, signal.description, JSON.stringify(signal.evidence)]);
+  }
+}
+
+async function economyMonitorData(searchParams) {
+  const gameConfig = readGameProperties();
+  const serverId = Number(gameConfig["server.id"] || 0);
+  const hours = boundedHours(searchParams);
+  const historyEnabled = String(gameConfig["open.historySQL"] || "false").toLowerCase() === "true";
+  const sinceInterval = `INTERVAL ${hours} HOUR`;
+  const [[summary], [highBalances], [negativeBalances], [giftBursts], [rewardBursts], [ipClusters], [shinwaConcentration], [historyRows], [shinwaSummary], [inboxSummary]] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS players, COALESCE(SUM(p.online = 1), 0) AS online_players, CAST(COALESCE(SUM(p.xu), 0) AS CHAR) AS total_xu, CAST(COALESCE(SUM(p.xuInBox), 0) AS CHAR) AS total_xu_box, CAST(COALESCE(SUM(p.yen), 0) AS CHAR) AS total_yen FROM players p WHERE p.server_id = ?`, [serverId]),
+    pool.query(`SELECT p.id AS player_id, p.user_id, p.server_id, p.name AS player_name, CAST(COALESCE(p.xu, 0) + COALESCE(p.xuInBox, 0) AS CHAR) AS total_xu, p.xu, p.xuInBox, p.yen, u.username, u.coin, u.luong, u.balance FROM players p LEFT JOIN users u ON u.id = p.user_id WHERE p.server_id = ? AND (COALESCE(p.xu, 0) + COALESCE(p.xuInBox, 0) >= ? OR COALESCE(u.coin, 0) >= ? OR COALESCE(u.luong, 0) >= ?) ORDER BY COALESCE(p.xu, 0) + COALESCE(p.xuInBox, 0) DESC LIMIT 100`, [serverId, ECONOMY_RULES.highBalanceXu, ECONOMY_RULES.highBalanceXu, ECONOMY_RULES.highBalanceXu]),
+    pool.query(`SELECT p.id AS player_id, p.user_id, p.server_id, p.name AS player_name, p.xu, p.xuInBox, p.yen, u.username, u.coin, u.luong, u.balance FROM players p LEFT JOIN users u ON u.id = p.user_id WHERE p.server_id = ? AND (COALESCE(p.xu, 0) < 0 OR COALESCE(p.xuInBox, 0) < 0 OR COALESCE(p.yen, 0) < 0 OR COALESCE(u.coin, 0) < 0 OR COALESCE(u.luong, 0) < 0 OR COALESCE(u.balance, 0) < 0) LIMIT 100`, [serverId]),
+    pool.query(`SELECT h.player_id, p.name AS player_name, p.server_id, COUNT(*) AS claims_24h FROM gift_code_histories h LEFT JOIN players p ON p.id = h.player_id WHERE h.created_at >= UTC_TIMESTAMP() - ${sinceInterval} AND (p.server_id = ? OR p.server_id IS NULL) GROUP BY h.player_id, p.name, p.server_id HAVING COUNT(*) >= ? ORDER BY claims_24h DESC LIMIT 100`, [serverId, ECONOMY_RULES.giftClaims24h]),
+    pool.query(`SELECT c.player_id, p.name AS player_name, p.server_id, COUNT(*) AS claims_24h FROM panel_reward_claims c LEFT JOIN players p ON p.id = c.player_id WHERE c.claimed_at >= UTC_TIMESTAMP() - ${sinceInterval} AND (p.server_id = ? OR p.server_id IS NULL) GROUP BY c.player_id, p.name, p.server_id HAVING COUNT(*) >= ? ORDER BY claims_24h DESC LIMIT 100`, [serverId, ECONOMY_RULES.rewardClaims24h]),
+    pool.query(`SELECT COALESCE(NULLIF(u.ip, ''), 'unknown') AS ip, COUNT(DISTINCT u.id) AS accounts, COUNT(DISTINCT CASE WHEN p.server_id = ? THEN p.id END) AS players, ? AS server_id FROM users u LEFT JOIN players p ON p.user_id = u.id WHERE u.ip IS NOT NULL AND u.ip NOT IN ('', '0') GROUP BY u.ip HAVING COUNT(DISTINCT u.id) >= ? ORDER BY accounts DESC LIMIT 100`, [serverId, serverId, ECONOMY_RULES.sameIpAccounts]),
+    pool.query(`SELECT seller, server_id, COUNT(*) AS listings, CAST(COALESCE(SUM(price), 0) AS CHAR) AS total_value FROM shinwa WHERE server_id = ? AND status = 0 GROUP BY server_id, seller HAVING COUNT(*) >= ? OR SUM(price) >= ? ORDER BY listings DESC, total_value DESC LIMIT 100`, [serverId, ECONOMY_RULES.activeShinwaListings, ECONOMY_RULES.activeShinwaValue]),
+    historyEnabled ? pool.query(`SELECT h.id, h.player_id, p.user_id, p.server_id, p.name AS player_name, h.type_name, h.truoc, h.sau, h.items, h.bo_sung, h.time FROM history_table h LEFT JOIN players p ON p.id = h.player_id WHERE h.time >= UTC_TIMESTAMP() - ${sinceInterval} AND (p.server_id = ? OR p.server_id IS NULL) ORDER BY h.time DESC LIMIT 500`, [serverId]) : Promise.resolve([[]]),
+    pool.query(`SELECT COUNT(*) AS active_listings, CAST(COALESCE(SUM(price), 0) AS CHAR) AS active_value, COUNT(DISTINCT seller) AS active_sellers FROM shinwa WHERE server_id = ? AND status = 0`, [serverId]),
+    pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(delivery_status = 'pending'), 0) AS pending, COALESCE(SUM(delivery_status = 'delivered'), 0) AS delivered FROM panel_player_inbox WHERE server_id = ?`, [serverId]),
+  ]);
+  const largeDeltas = historyRows.map(parseHistoryBalanceDelta).filter(row => row.maxAbsDelta >= ECONOMY_RULES.largeDeltaXu);
+  const signals = detectEconomySignals({ negativeBalances, highBalances, largeDeltas, giftBursts, rewardBursts, ipClusters, shinwaConcentration }, new Date());
+  await upsertEconomySignals(signals);
+  const status = String(searchParams.get("status") || "");
+  const statusFilter = ["open", "acknowledged", "resolved", "false_positive"].includes(status) ? " AND a.status = ?" : "";
+  const alertParams = statusFilter ? [serverId, status] : [serverId];
+  const [alerts] = await pool.query(`SELECT a.id, a.dedupe_key, a.rule_key, a.severity, a.status, a.server_id, a.player_id, a.user_id, a.player_name, a.username, a.title, a.description, a.evidence, a.note, a.created_at, a.updated_at FROM panel_economy_alerts a WHERE a.server_id = ?${statusFilter} ORDER BY FIELD(a.status, 'open', 'acknowledged', 'resolved', 'false_positive'), FIELD(a.severity, 'critical', 'warning', 'info'), a.created_at DESC LIMIT 300`, alertParams);
+  return { serverId, hours, historyEnabled, summary: summary || {}, shinwa: shinwaSummary?.[0] || {}, inbox: inboxSummary?.[0] || {}, highBalances, negativeBalances, largeDeltas: largeDeltas.slice(0, 100), alerts, signalCount: signals.length, thresholds: ECONOMY_RULES };
+}
+
+async function inboxData(searchParams) {
+  const serverId = Number(readGameProperties()["server.id"] || 0);
+  const status = String(searchParams.get("status") || "");
+  const playerId = Number(searchParams.get("player_id") || 0);
+  const params = [serverId];
+  let where = "i.server_id = ?";
+  if (["pending", "delivered", "failed"].includes(status)) { where += " AND i.delivery_status = ?"; params.push(status); }
+  if (Number.isInteger(playerId) && playerId > 0) { where += " AND i.player_id = ?"; params.push(playerId); }
+  const [rows] = await pool.query(`SELECT i.id, i.server_id, i.player_id, i.user_id, p.name AS player_name, i.category, i.title, i.body, i.source_type, i.source_id, i.dedupe_key, i.delivery_status, i.read_at, i.delivered_at, i.created_at, i.updated_at FROM panel_player_inbox i LEFT JOIN players p ON p.id = i.player_id WHERE ${where} ORDER BY i.created_at DESC LIMIT 300`, params);
+  return { rows, serverId, statuses: ["pending", "delivered", "failed"] };
 }
 
 async function eventControlData() {
@@ -511,6 +566,48 @@ async function ensureSchema() {
       notified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (shinwa_id, server_id),
       INDEX panel_shinwa_expiry_seller_idx (seller, server_id, notified_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_player_inbox (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      server_id INT NOT NULL DEFAULT 0,
+      player_id INT NOT NULL,
+      user_id BIGINT NULL,
+      category VARCHAR(40) NOT NULL DEFAULT 'system',
+      title VARCHAR(160) NOT NULL,
+      body TEXT NOT NULL,
+      source_type VARCHAR(40) NOT NULL,
+      source_id VARCHAR(120) NOT NULL,
+      dedupe_key VARCHAR(180) NOT NULL,
+      delivery_status ENUM('pending','delivered','failed') NOT NULL DEFAULT 'pending',
+      read_at DATETIME NULL,
+      delivered_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY panel_player_inbox_dedupe_unique (dedupe_key),
+      INDEX panel_player_inbox_player_idx (server_id, player_id, delivery_status, created_at),
+      INDEX panel_player_inbox_source_idx (source_type, source_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_economy_alerts (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      dedupe_key VARCHAR(180) NOT NULL,
+      rule_key VARCHAR(80) NOT NULL,
+      severity ENUM('info','warning','critical') NOT NULL DEFAULT 'info',
+      status ENUM('open','acknowledged','resolved','false_positive') NOT NULL DEFAULT 'open',
+      server_id INT NOT NULL DEFAULT 0,
+      player_id INT NULL,
+      user_id BIGINT NULL,
+      player_name VARCHAR(80) NULL,
+      username VARCHAR(80) NULL,
+      title VARCHAR(180) NOT NULL,
+      description VARCHAR(500) NOT NULL,
+      evidence JSON NULL,
+      note VARCHAR(500) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY panel_economy_alert_dedupe_unique (dedupe_key),
+      INDEX panel_economy_alert_status_idx (status, severity, created_at),
+      INDEX panel_economy_alert_player_idx (server_id, player_id, created_at),
+      INDEX panel_economy_alert_rule_idx (rule_key, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS panel_world_boss_notifications (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1012,6 +1109,14 @@ async function api(req, res, url) {
     ]);
     writeJson(res, 200, { totals: totalsRows[0] || {}, classes, daily, economy: economyRows[0] || {}, recent }); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/economy-monitor") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await economyMonitorData(url.searchParams)); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/player-inbox") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await inboxData(url.searchParams)); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/maintenance") {
     if (!requireUser(user, res, "admin")) return;
     const [rows] = await pool.query("SELECT id, starts_at, ends_at, message, status, created_by, approved_by, created_at FROM panel_maintenance_windows ORDER BY starts_at DESC LIMIT 100");
@@ -1092,6 +1197,15 @@ async function api(req, res, url) {
     await pool.query("UPDATE users SET status = 2, ban_until = ? WHERE id = ? LIMIT 1", [banUntil, id]);
     await audit(user, "moderation", "account.banned", "user", String(id), "success", { banUntil: banUntil.toISOString() });
     writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/economy-alert-state") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req); const id = Number(body.id); const status = String(body.status || ""); const note = String(body.note || "").trim().slice(0, 500);
+    if (!Number.isInteger(id) || id < 1 || !["acknowledged", "resolved", "false_positive", "open"].includes(status) || body.confirmation !== `UPDATE ECONOMY ALERT ${id}`) throw new Error("Cảnh báo kinh tế hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE panel_economy_alerts SET status = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? LIMIT 1", [status, note || null, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy cảnh báo kinh tế.");
+    await audit(user, "economy-monitor", `economy_alert.${status}`, "economy_alert", String(id), "success", { status, note: note || null });
+    writeJson(res, 200, { ok: true, id, status }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/alert-ack") {
     if (!requireUser(user, res, "operator")) return;

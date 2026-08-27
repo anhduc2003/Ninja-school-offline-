@@ -23,3 +23,9 @@ Fixture bắt đầu từ schema `gift_codes` cũ, sau đó `migrate-gift-code-l
 ## Platform note
 
 Kiểm thử HTTP/visual chạy trong Linux sandbox. Không tuyên bố đã kiểm thử thiết bị Android thật. Launchers vẫn kiểm tra health local, giữ database/config/runtime người dùng qua Git sync, và panel không được mở qua LAN/Internet.
+
+## Economy Monitor và mailbox
+
+`economy-monitor.test.mjs` kiểm tra parse before/after balance, ngưỡng số dư âm/số dư lớn, burst gift/reward, cụm IP, tập trung Shinwa, dedupe theo server/ngày và contract không auto-ban. `shinwa-expiry-mailbox.test.mjs` kiểm tra marker listing/server, mailbox source/dedupe, online alert, delivery sau login và hook đúng transition hết hạn.
+
+Khi chạy fixture MariaDB, cần xác minh `/api/economy-monitor?hours=24` trả summary theo server hiện tại, `/api/player-inbox` trả delivery status, và action `UPDATE ECONOMY ALERT <id>` cập nhật trạng thái kèm audit. Với Shinwa, tạo listing hết hạn trong Java hoặc dùng thao tác panel **Hết hạn**, sau đó kiểm tra một record `shinwa_expiry` duy nhất trong `panel_player_inbox`, seller nhận đúng tin và `receiveItem()` vẫn trả item bình thường.

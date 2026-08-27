@@ -430,7 +430,52 @@ public class User {
         return null;
     }
 
+    private void deliverPendingInbox() {
+        Connection connection = null;
+        try {
+            connection = DbManager.getInstance().getConnection(DbManager.GAME);
+            StringBuilder mailbox = new StringBuilder();
+            ArrayList<Integer> deliveredIds = new ArrayList<>();
+            try (PreparedStatement pending = connection.prepareStatement("SELECT id, title, body FROM panel_player_inbox WHERE server_id = ? AND player_id = ? AND delivery_status = 'pending' ORDER BY created_at ASC, id ASC LIMIT 20")) {
+                pending.setInt(1, Config.getInstance().getServerID());
+                pending.setInt(2, this.sltChar.id);
+                try (ResultSet result = pending.executeQuery()) {
+                    while (result.next()) {
+                        if (mailbox.length() > 0) {
+                            mailbox.append("\n\n");
+                        }
+                        mailbox.append(result.getString("title")).append("\n").append(result.getString("body"));
+                        deliveredIds.add(result.getInt("id"));
+                    }
+                }
+            }
+            if (mailbox.length() == 0) {
+                return;
+            }
+            this.service.showAlert("Hộp thư", mailbox.toString());
+            try (PreparedStatement delivered = connection.prepareStatement("UPDATE panel_player_inbox SET delivery_status = 'delivered', delivered_at = NOW(), read_at = NOW() WHERE id = ? AND player_id = ? AND delivery_status = 'pending' LIMIT 1")) {
+                for (Integer id : deliveredIds) {
+                    delivered.setInt(1, id);
+                    delivered.setInt(2, this.sltChar.id);
+                    delivered.addBatch();
+                }
+                delivered.executeBatch();
+            }
+        } catch (Exception exception) {
+            Log.warn("Pending inbox delivery skipped: " + exception.getMessage());
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (Exception closeException) {
+                Log.debug("Pending inbox connection close failed: " + closeException.getMessage());
+            }
+        }
+    }
+
     public void selectChar(Message ms) {
+
         try {
             if (NinjaSchool.isStop) {
                 service.serverDialog("Hệ thống Máy chủ bảo trì vui lòng thoát game để tránh mất dữ liệu.");
@@ -644,7 +689,9 @@ public class User {
                         this.service.showAlert("Thông Báo", notification.toString().trim());
                     }
                 }
+                deliverPendingInbox();
                 Connection conn = DbManager.getInstance().getConnection(DbManager.SAVE_DATA);
+
                 try {
                     PreparedStatement stmt2 = conn.prepareStatement("UPDATE `users` SET `online` = ? WHERE `id` = ?");
                     try {

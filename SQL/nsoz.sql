@@ -10406,3 +10406,51 @@ CREATE TABLE IF NOT EXISTS `panel_shinwa_expiry_notifications` (
   PRIMARY KEY (`shinwa_id`,`server_id`),
   KEY `panel_shinwa_expiry_seller_idx` (`seller`,`server_id`,`notified_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Normalized player inbox for durable, deduplicated system notifications
+CREATE TABLE IF NOT EXISTS `panel_player_inbox` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `server_id` int(11) NOT NULL DEFAULT 0,
+  `player_id` int(11) NOT NULL,
+  `user_id` bigint(20) DEFAULT NULL,
+  `category` varchar(40) NOT NULL DEFAULT 'system',
+  `title` varchar(160) NOT NULL,
+  `body` text NOT NULL,
+  `source_type` varchar(40) NOT NULL,
+  `source_id` varchar(120) NOT NULL,
+  `dedupe_key` varchar(180) NOT NULL,
+  `delivery_status` enum('pending','delivered','failed') NOT NULL DEFAULT 'pending',
+  `read_at` datetime DEFAULT NULL,
+  `delivered_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `panel_player_inbox_dedupe_unique` (`dedupe_key`),
+  KEY `panel_player_inbox_player_idx` (`server_id`,`player_id`,`delivery_status`,`created_at`),
+  KEY `panel_player_inbox_source_idx` (`source_type`,`source_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Economy anomaly review queue; alerts are advisory and never auto-ban players
+CREATE TABLE IF NOT EXISTS `panel_economy_alerts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `dedupe_key` varchar(180) NOT NULL,
+  `rule_key` varchar(80) NOT NULL,
+  `severity` enum('info','warning','critical') NOT NULL DEFAULT 'info',
+  `status` enum('open','acknowledged','resolved','false_positive') NOT NULL DEFAULT 'open',
+  `server_id` int(11) NOT NULL DEFAULT 0,
+  `player_id` int(11) DEFAULT NULL,
+  `user_id` bigint(20) DEFAULT NULL,
+  `player_name` varchar(80) DEFAULT NULL,
+  `username` varchar(80) DEFAULT NULL,
+  `title` varchar(180) NOT NULL,
+  `description` varchar(500) NOT NULL,
+  `evidence` longtext DEFAULT NULL,
+  `note` varchar(500) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `panel_economy_alert_dedupe_unique` (`dedupe_key`),
+  KEY `panel_economy_alert_status_idx` (`status`,`severity`,`created_at`),
+  KEY `panel_economy_alert_player_idx` (`server_id`,`player_id`,`created_at`),
+  KEY `panel_economy_alert_rule_idx` (`rule_key`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

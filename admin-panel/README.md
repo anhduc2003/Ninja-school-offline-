@@ -67,9 +67,23 @@ Chỉ admin mới được sửa. Tin đang bán có thể chỉnh giá từ 1 �
 
 Sau khi lưu, panel cập nhật database trong transaction rồi gọi runtime bridge `/api/control/shinwa-sync` để đồng bộ listing đang nằm trong cache `StallManager`. Nếu bridge hoặc Java offline, database vẫn được lưu và audit; restart Java để runtime load lại bảng `shinwa`. Quy trình mua hàng, trừ xu, trả tiền seller, nhận lại item và ghi `History` vẫn do Java xử lý.
 
-Khi thời hạn chạm ngưỡng, Java phát hiện đúng transition sang danh sách hết hạn và gửi thông báo riêng cho seller. Thông báo được nối vào `players.message` thay vì ghi đè message cũ; seller online nhận alert ngay, seller offline nhận alert khi đăng nhập kế tiếp. Bảng `panel_shinwa_expiry_notifications` có khóa `(shinwa_id, server_id)` để marker được claim nguyên tử, nên restart hoặc nhiều tick không gửi trùng. Panel tự bootstrap bảng này khi `bootstrapSchema` bật, và cột trạng thái trong module hiển thị **Đã gửi hộp thư** / **Chưa gửi hộp thư**.
+Khi thời hạn chạm ngưỡng, Java phát hiện đúng transition sang danh sách hết hạn và gửi thông báo riêng cho seller. Notification mới được lưu thành bản ghi riêng trong `panel_player_inbox`; seller online nhận alert ngay, seller offline nhận khi đăng nhập kế tiếp. Bảng `panel_shinwa_expiry_notifications` có khóa `(shinwa_id, server_id)` để marker được claim nguyên tử, nên restart hoặc nhiều tick không gửi trùng. Kênh `players.message` cũ vẫn được giữ cho thông báo legacy. Panel tự bootstrap các bảng mới khi `bootstrapSchema` bật, và cột trạng thái trong module hiển thị marker/delivery/read.
 
 Chi tiết schema, trạng thái và giới hạn nằm tại [`CONSIGNMENT_DESIGN.md`](CONSIGNMENT_DESIGN.md).
+
+## Kinh tế & cảnh báo chống gian lận
+
+Mô-đun **Kinh tế & cảnh báo** đọc số liệu thật theo `server.id` hiện tại: tổng xu/yên, số dư lớn, số dư âm, biến động before/after từ `history_table`, tần suất đổi gift code, tần suất nhận Reward Campaign, cụm account dùng chung IP và tập trung listing Shinwa. Cửa sổ phân tích hỗ trợ 24 giờ, 72 giờ hoặc 7 ngày.
+
+Cảnh báo là tín hiệu hỗ trợ GM, không tự động ban người chơi. Mỗi tín hiệu được dedupe theo rule/server/ngày và lưu trong `panel_economy_alerts` cùng evidence, severity, trạng thái review và note. Operator có thể tiếp nhận, đóng, mở lại hoặc đánh dấu hợp lệ bằng confirmation phrase; mọi thao tác đều có audit.
+
+Nếu `open.historySQL=false`, panel vẫn hiển thị số dư hiện tại nhưng phải báo rõ rằng phân tích biến động lịch sử không đầy đủ. Nên bật `open.historySQL=true` trong `config.properties` để Java ghi lịch sử kinh tế vào `history_table`.
+
+## Hộp thư hệ thống
+
+Mô-đun **Hộp thư hệ thống** hiển thị từng notification theo người nhận, source, source ID, delivery status, thời điểm gửi và thời điểm đọc. Java đọc tối đa 20 bản ghi pending sau khi người chơi chọn nhân vật, hiển thị một hộp thư và đánh dấu delivered/read sau khi gửi client thành công. Panel chỉ quan sát và đối soát, không tự nhận vật phẩm hoặc thay đổi tài sản người chơi.
+
+Schema chi tiết nằm tại [`ECONOMY_MONITOR_DESIGN.md`](ECONOMY_MONITOR_DESIGN.md).
 
 ## Thông báo Boss thế giới
 
