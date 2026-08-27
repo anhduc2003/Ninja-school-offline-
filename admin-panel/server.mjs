@@ -145,11 +145,11 @@ async function shinwaData(searchParams) {
   let where = "s.server_id = ?";
   if (q) { where += " AND (s.seller LIKE CONCAT('%', ?, '%') OR i.name LIKE CONCAT('%', ?, '%') OR CAST(s.id AS CHAR) = ?)"; params.push(q, q, q); }
   if (["0", "1", "2"].includes(status)) { where += " AND s.status = ?"; params.push(Number(status)); }
-  const [rows] = await pool.query(`SELECT s.id, s.server_id, s.seller, s.price, s.status, s.time, s.item, JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS item_id, i.name AS item_name, i.icon, i.type AS item_type, i.level AS item_level FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) WHERE ${where} ORDER BY s.status ASC, s.id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+  const [rows] = await pool.query(`SELECT s.id, s.server_id, s.seller, s.price, s.status, s.time, s.item, n.notified_at AS expiry_notified_at, JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS item_id, i.name AS item_name, i.icon, i.type AS item_type, i.level AS item_level FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) LEFT JOIN panel_shinwa_expiry_notifications n ON n.shinwa_id = s.id AND n.server_id = s.server_id WHERE ${where} ORDER BY s.status ASC, s.id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
   const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) WHERE ${where}`, params);
   const [optionRows] = await pool.query("SELECT id, name FROM item_option ORDER BY id");
   const optionNames = new Map(optionRows.map(row => [Number(row.id), row.name]));
-  const normalized = rows.map(row => { const item = parseShinwaItem(row.item, optionNames); return { id: row.id, server_id: row.server_id, seller: row.seller, price: row.price, status: row.status, status_label: SHINWA_STATUS_LABELS[row.status] || `Trạng thái #${row.status}`, time: row.time, item_id: item.itemId || Number(row.item_id || 0), item_name: row.item_name || `Vật phẩm #${item.itemId || row.item_id || "?"}`, icon: row.icon, item_type: row.item_type, item_level: row.item_level, quantity: item.quantity, is_lock: item.isLock, sys: item.sys, upgrade: item.upgrade, yen: item.yen, expire: item.expire, options: item.options, parse_error: item.parseError }; });
+  const normalized = rows.map(row => { const item = parseShinwaItem(row.item, optionNames); return { id: row.id, server_id: row.server_id, seller: row.seller, price: row.price, status: row.status, status_label: SHINWA_STATUS_LABELS[row.status] || `Trạng thái #${row.status}`, expiry_notified_at: row.expiry_notified_at || null, expiry_notification_label: row.expiry_notified_at ? "Đã gửi hộp thư" : "Chưa gửi hộp thư", time: row.time, item_id: item.itemId || Number(row.item_id || 0), item_name: row.item_name || `Vật phẩm #${item.itemId || row.item_id || "?"}`, icon: row.icon, item_type: row.item_type, item_level: row.item_level, quantity: item.quantity, is_lock: item.isLock, sys: item.sys, upgrade: item.upgrade, yen: item.yen, expire: item.expire, options: item.options, parse_error: item.parseError }; });
   return { rows: normalized, total: Number(countRows[0]?.total || 0), page, limit, statuses: SHINWA_STATUS_LABELS };
 }
 
@@ -503,6 +503,14 @@ async function ensureSchema() {
       UNIQUE KEY panel_reward_claim_unique (campaign_id, user_id, player_id),
       INDEX panel_reward_claim_campaign_idx (campaign_id, claimed_at),
       INDEX panel_reward_claim_user_idx (user_id, claimed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_shinwa_expiry_notifications (
+      shinwa_id INT NOT NULL,
+      server_id INT NOT NULL,
+      seller VARCHAR(100) NOT NULL,
+      notified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (shinwa_id, server_id),
+      INDEX panel_shinwa_expiry_seller_idx (seller, server_id, notified_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS panel_world_boss_notifications (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

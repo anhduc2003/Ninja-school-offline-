@@ -11,9 +11,12 @@ import Exe_Z.item.Item;
 import Exe_Z.model.Char;
 import Exe_Z.model.Menu;
 import Exe_Z.server.Config;
+import Exe_Z.util.Log;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -228,6 +231,76 @@ public class StallManager implements Runnable {
             stall.removeByUniqueId(uniqueId);
         }
         return true;
+    }
+
+    public void notifyExpiry(Item item) {
+        if (item == null || item.getProductUniqueId() <= 0 || item.getProductSeller() == null || item.getProductSeller().isBlank()) {
+            return;
+        }
+        String text = "Kí gửi Shinwa: Tin #" + item.getProductUniqueId() + " (" + item.template.name + ") đã hết hạn. Hãy đến NPC Shinwa để nhận lại vật phẩm.";
+        Char onlineSeller = Char.findCharByName(item.getProductSeller());
+        Connection connection = null;
+        try {
+            connection = DbManager.getInstance().getConnection(DbManager.GAME);
+            connection.setAutoCommit(false);
+            try (PreparedStatement claim = connection.prepareStatement("INSERT IGNORE INTO panel_shinwa_expiry_notifications (shinwa_id, server_id, seller) VALUES (?, ?, ?)")) {
+                claim.setInt(1, item.getProductUniqueId());
+                claim.setInt(2, Config.getInstance().getServerID());
+                claim.setString(3, item.getProductSeller());
+                if (claim.executeUpdate() != 1) {
+                    connection.rollback();
+                    return;
+                }
+            }
+            String existing = "";
+            try (PreparedStatement lookup = connection.prepareStatement("SELECT message FROM players WHERE name = ? AND server_id = ? LIMIT 1 FOR UPDATE")) {
+                lookup.setString(1, item.getProductSeller());
+                lookup.setInt(2, Config.getInstance().getServerID());
+                try (ResultSet result = lookup.executeQuery()) {
+                    if (!result.next()) {
+                        connection.rollback();
+                        Log.warn("Shinwa expiry seller not found: " + item.getProductSeller());
+                        return;
+                    }
+                    existing = result.getString("message");
+                }
+            }
+            String mailbox = appendMailbox(existing, text);
+            try (PreparedStatement update = connection.prepareStatement("UPDATE players SET message = ? WHERE name = ? AND server_id = ? LIMIT 1")) {
+                update.setString(1, mailbox);
+                update.setString(2, item.getProductSeller());
+                update.setInt(3, Config.getInstance().getServerID());
+                update.executeUpdate();
+            }
+            connection.commit();
+            if (onlineSeller != null) {
+                onlineSeller.message = mailbox;
+                onlineSeller.getService().showAlert("Kí gửi Shinwa", text);
+            }
+        } catch (Exception exception) {
+            try {
+                if (connection != null) {
+                    connection.rollback();
+                }
+            } catch (Exception rollbackException) {
+                Log.debug("Shinwa expiry rollback failed: " + rollbackException.getMessage());
+            }
+            Log.error("Shinwa expiry notification failed: " + exception.getMessage(), exception);
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (Exception closeException) {
+                Log.debug("Shinwa expiry connection close failed: " + closeException.getMessage());
+            }
+        }
+    }
+
+    private String appendMailbox(String existing, String text) {
+        String current = existing == null ? "" : existing.trim();
+        String combined = current.isEmpty() ? text : current + "\n" + text;
+        return combined;
     }
 
     public int getTotalProductBySeller(String productSeller) {

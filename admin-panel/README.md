@@ -67,6 +67,8 @@ Chỉ admin mới được sửa. Tin đang bán có thể chỉnh giá từ 1 �
 
 Sau khi lưu, panel cập nhật database trong transaction rồi gọi runtime bridge `/api/control/shinwa-sync` để đồng bộ listing đang nằm trong cache `StallManager`. Nếu bridge hoặc Java offline, database vẫn được lưu và audit; restart Java để runtime load lại bảng `shinwa`. Quy trình mua hàng, trừ xu, trả tiền seller, nhận lại item và ghi `History` vẫn do Java xử lý.
 
+Khi thời hạn chạm ngưỡng, Java phát hiện đúng transition sang danh sách hết hạn và gửi thông báo riêng cho seller. Thông báo được nối vào `players.message` thay vì ghi đè message cũ; seller online nhận alert ngay, seller offline nhận alert khi đăng nhập kế tiếp. Bảng `panel_shinwa_expiry_notifications` có khóa `(shinwa_id, server_id)` để marker được claim nguyên tử, nên restart hoặc nhiều tick không gửi trùng. Panel tự bootstrap bảng này khi `bootstrapSchema` bật, và cột trạng thái trong module hiển thị **Đã gửi hộp thư** / **Chưa gửi hộp thư**.
+
 Chi tiết schema, trạng thái và giới hạn nằm tại [`CONSIGNMENT_DESIGN.md`](CONSIGNMENT_DESIGN.md).
 
 ## Thông báo Boss thế giới

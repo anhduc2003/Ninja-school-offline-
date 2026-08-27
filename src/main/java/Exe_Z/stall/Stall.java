@@ -276,8 +276,10 @@ public class Stall {
                 if (t.getProductTime() > 0) {
                     t.update();
                 } else {
+                    StallManager.getInstance().notifyExpiry(t);
                     expiredProductList.add(t);
                 }
+
             });
             this.productList.removeAll(expiredProductList);
         }

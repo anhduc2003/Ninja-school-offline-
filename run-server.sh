@@ -19,8 +19,8 @@ if [ "${NSO_GIFT_CODE_MIGRATION:-1}" = "1" ]; then
 else
   printf '%s\n' 'Bỏ qua migration Gift Code lifecycle theo NSO_GIFT_CODE_MIGRATION=0.'
 fi
-bash "${ROOT_DIR}/scripts/start-server.sh"
 bash "${ROOT_DIR}/admin-panel/start-panel.sh"
+bash "${ROOT_DIR}/scripts/start-server.sh"
 bash "${ROOT_DIR}/admin-panel/start-scheduler.sh"
 
 printf '%s\n' "Server game đang chạy. Game log: tail -f ${ROOT_DIR}/logs/server.log"

@@ -10396,3 +10396,13 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- Shinwa expiry mailbox notification marker (idempotent; used by the panel/runtime extension)
+CREATE TABLE IF NOT EXISTS `panel_shinwa_expiry_notifications` (
+  `shinwa_id` int(11) NOT NULL,
+  `server_id` int(11) NOT NULL,
+  `seller` varchar(100) NOT NULL,
+  `notified_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`shinwa_id`,`server_id`),
+  KEY `panel_shinwa_expiry_seller_idx` (`seller`,`server_id`,`notified_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

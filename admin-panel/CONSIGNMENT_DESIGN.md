@@ -21,3 +21,13 @@ Sau khi update database, panel gọi `/api/control/shinwa-sync` qua bearer token
 ## Bảo toàn contract game
 
 Item JSON gốc chỉ được parse nội bộ bằng server-side helper để đọc thuộc tính. Panel không expose trường raw item cho form và không tạo JSON mới. Việc mua, trả tiền cho seller, nhận lại item hết hạn, trừ phí và ghi `History` vẫn do Java `Stall`/`StallManager` xử lý.
+
+## Thông báo hết hạn vào hộp thư seller
+
+Khi `Stall.update()` chuyển một item từ `productList` sang `expiredProductList`, runtime gọi luồng thông báo đúng một lần cho seller của listing. Nội dung thông báo gồm ID tin, tên vật phẩm và hướng dẫn gặp NPC Shinwa để nhận lại vật phẩm; seller không được suy ra từ người đang online khác hoặc từ dữ liệu panel.
+
+Để chống gửi trùng qua nhiều tick, restart hoặc nhiều runtime xử lý đồng thời, claim được thực hiện bằng `INSERT IGNORE` vào bảng `panel_shinwa_expiry_notifications` với khóa chính kép `(shinwa_id, server_id)`. Marker lưu seller và `notified_at`; transaction chỉ commit sau khi đọc rồi nối thêm vào `players.message`, vì vậy không ghi đè thông báo cũ. Bảng marker được tạo tự động bởi `admin-panel/server.mjs` và cũng có trong `SQL/nsoz.sql` cho cài đặt mới.
+
+`players.message` là kênh hộp thư hiện có của game: `Char.loadData()` nạp nội dung này, sau khi người chơi vào game `User` gọi `showAlert("Hệ thống", ...)` rồi xóa bản đã hiển thị trong bộ nhớ. Với seller offline, thông báo được lưu bền vững và sẽ hiện ở lần đăng nhập kế tiếp. Với seller online, runtime vừa lưu thông báo để audit/delivery bền vững vừa gửi private alert ngay lập tức. Luồng `receiveItem()` không thay đổi: seller vẫn phải gặp NPC Shinwa, item chỉ bị xóa khỏi `shinwa` sau khi thêm thành công vào túi.
+
+Panel hiển thị nhãn **Đã gửi hộp thư** hoặc **Chưa gửi hộp thư** trong bảng/chi tiết listing để admin kiểm tra mà không cần nhập JSON. Trạng thái này chỉ là quan sát; panel không tự nhận item thay người chơi.
