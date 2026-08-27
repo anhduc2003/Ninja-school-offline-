@@ -20,6 +20,7 @@ const DATA_DIR = join(__dirname, "data");
 const BACKUP_DIR = join(__dirname, "backups");
 const PUBLIC_DIR = join(__dirname, "public");
 const ITEM_SPRITE_DIR = resolve(ROOT_DIR, "Data", "Img", "Small");
+const MOB_SPRITE_DIR = resolve(ROOT_DIR, "Data", "Img", "Mob");
 const CONFIG_PATH = join(__dirname, "config.local.json");
 const FIRST_LOGIN_PATH = join(DATA_DIR, "first-login.txt");
 const MAX_BODY_SIZE = 1_000_000;
@@ -626,6 +627,21 @@ async function saveRewardCampaign(user, body) {
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }
 
+async function sendMonsterIcon(res, url) {
+  const rawZoom = url.searchParams.get("zoom");
+  const zoom = rawZoom === null ? 1 : Number(rawZoom);
+  const id = Number(url.searchParams.get("id"));
+  if (!Number.isInteger(zoom) || zoom < 1 || zoom > 4 || !Number.isInteger(id) || id < 0 || id > 100_000) { res.writeHead(404, { "Cache-Control": "public, max-age=300" }); res.end(); return; }
+  let file = null;
+  for (const frame of [0, 1, 2, 3]) {
+    const candidate = resolve(MOB_SPRITE_DIR, String(zoom), `${id}_${frame}.png`);
+    if (candidate.startsWith(`${MOB_SPRITE_DIR}/`) && existsSync(candidate) && !statSync(candidate).isDirectory()) { file = candidate; break; }
+  }
+  if (!file) { res.writeHead(404, { "Cache-Control": "public, max-age=300" }); res.end(); return; }
+  res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" });
+  createReadStream(file).pipe(res);
+}
+
 async function sendItemIcon(res, url) {
   const rawZoom = url.searchParams.get("zoom");
   const zoom = rawZoom === null ? 1 : Number(rawZoom);
@@ -654,6 +670,7 @@ async function api(req, res, url) {
   }
   const user = await getSessionUser(req);
   if (req.method === "GET" && url.pathname === "/api/item-icon") { await sendItemIcon(res, url); return; }
+  if (req.method === "GET" && url.pathname === "/api/monster-icon") { await sendMonsterIcon(res, url); return; }
   if (req.method === "GET" && url.pathname === "/api/local/context") {
     writeJson(res, 200, { access: "local-only-no-login", actor: user.username, csrf: LOCAL_CSRF_TOKEN }); return;
   }
@@ -753,7 +770,7 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/monsters") {
     if (!requireUser(user, res, "analyst")) return;
     const boss = url.searchParams.get("boss") === "1" ? 1 : 0;
-    const [rows] = await pool.query("SELECT id, name, level, boss, type, hp, range_move, speed FROM monster WHERE boss = ? ORDER BY level DESC LIMIT 250", [boss]);
+    const [rows] = await pool.query("SELECT id, id AS mob_icon, name, level, boss, type, hp, range_move, speed FROM monster WHERE boss = ? ORDER BY level DESC LIMIT 250", [boss]);
     writeJson(res, 200, { rows }); return;
   }
   if (req.method === "GET" && url.pathname === "/api/gift-codes") {
