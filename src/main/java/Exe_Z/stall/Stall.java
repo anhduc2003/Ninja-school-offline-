@@ -75,6 +75,47 @@ public class Stall {
         }
     }
 
+    public Item findByUniqueId(int uniqueId) {
+        synchronized (productList) {
+            for (Item item : productList) {
+                if (item.getProductUniqueId() == uniqueId) {
+                    return item;
+                }
+            }
+        }
+        synchronized (expiredProductList) {
+            for (Item item : expiredProductList) {
+                if (item.getProductUniqueId() == uniqueId) {
+                    return item;
+                }
+            }
+        }
+        synchronized (listOfSoldProducts) {
+            for (Item item : listOfSoldProducts) {
+                if (item.getProductUniqueId() == uniqueId) {
+                    return item;
+                }
+            }
+        }
+        return null;
+    }
+
+    public boolean removeByUniqueId(int uniqueId) {
+        synchronized (productList) {
+            if (productList.removeIf(item -> item.getProductUniqueId() == uniqueId)) {
+                return true;
+            }
+        }
+        synchronized (expiredProductList) {
+            if (expiredProductList.removeIf(item -> item.getProductUniqueId() == uniqueId)) {
+                return true;
+            }
+        }
+        synchronized (listOfSoldProducts) {
+            return listOfSoldProducts.removeIf(item -> item.getProductUniqueId() == uniqueId);
+        }
+    }
+
     public int getTotalProduct() {
         synchronized (productList) {
             return productList.size();

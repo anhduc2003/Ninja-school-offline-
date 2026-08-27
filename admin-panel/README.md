@@ -59,6 +59,16 @@ Nếu `admin-panel/data/config.local.json` đã tồn tại từ trước, cập
 
 Thông báo không được lưu để phát lại cho người chơi offline. Nếu Java đang tắt, sai token hoặc bridge chưa cấu hình, panel chỉ hiển thị trạng thái lỗi và khóa nút gửi.
 
+## Kí gửi Shinwa
+
+Mô-đun **Kí gửi Shinwa** đọc các listing của NPC Shinwa trong bảng `shinwa` theo `server.id` hiện tại. Giao diện hỗ trợ tìm theo ID tin, tên seller hoặc tên item, lọc `Đang bán`/`Đã bán`/`Đã nhận lại`, xem icon và toàn bộ metadata item, option theo tên/giá trị, giá xu, thời hạn còn lại, người bán và server.
+
+Chỉ admin mới được sửa. Tin đang bán có thể chỉnh giá từ 1 đến 2.000.000.000 xu và thời hạn còn lại từ 1 giây đến 30 ngày; có thể dùng **Đánh dấu hết hạn** để đưa tin vào luồng nhận lại theo logic Java. Tin đã bán hoặc đã nhận lại chỉ xem, không được sửa. Panel không tạo tin giả, không đổi seller/item và không yêu cầu nhập JSON.
+
+Sau khi lưu, panel cập nhật database trong transaction rồi gọi runtime bridge `/api/control/shinwa-sync` để đồng bộ listing đang nằm trong cache `StallManager`. Nếu bridge hoặc Java offline, database vẫn được lưu và audit; restart Java để runtime load lại bảng `shinwa`. Quy trình mua hàng, trừ xu, trả tiền seller, nhận lại item và ghi `History` vẫn do Java xử lý.
+
+Chi tiết schema, trạng thái và giới hạn nằm tại [`CONSIGNMENT_DESIGN.md`](CONSIGNMENT_DESIGN.md).
+
 ## Thông báo Boss thế giới
 
 Mô-đun **Thông báo Boss thế giới** quản lý thông báo tự động khi Boss xuất hiện hoặc bị hạ trong `SpawnBossManager`. Cấu hình được lưu trong `panel_world_boss_notifications`; lịch sử phát được ghi trong `panel_world_boss_notification_logs`. Panel tự tạo schema khi `bootstrapSchema` đang bật.

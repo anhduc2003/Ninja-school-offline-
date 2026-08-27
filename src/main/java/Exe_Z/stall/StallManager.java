@@ -190,6 +190,46 @@ public class StallManager implements Runnable {
         return null;
     }
 
+    public Item findProductByUniqueId(int uniqueId) {
+        for (Stall stall : stalls) {
+            Item item = stall.findByUniqueId(uniqueId);
+            if (item != null) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    public synchronized boolean applyAdminUpdate(int uniqueId, int price, int time, byte status) {
+        Item item = findProductByUniqueId(uniqueId);
+        if (item == null) {
+            return false;
+        }
+        item.setProductPrice(price);
+        item.setProductTime(time);
+        item.setProductStatus(status);
+        item.setProductChanged(false);
+        if (status != STATUS_ON_SALE) {
+            for (Stall stall : stalls) {
+                stall.removeByUniqueId(uniqueId);
+            }
+        }
+        return true;
+    }
+
+    public synchronized boolean removeProductByUniqueId(int uniqueId, byte status) {
+        Item item = findProductByUniqueId(uniqueId);
+        if (item == null) {
+            return false;
+        }
+        item.setProductStatus(status);
+        item.setProductChanged(false);
+        for (Stall stall : stalls) {
+            stall.removeByUniqueId(uniqueId);
+        }
+        return true;
+    }
+
     public int getTotalProductBySeller(String productSeller) {
         int total = 0;
         for (Stall stall : stalls) {

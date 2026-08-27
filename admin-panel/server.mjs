@@ -41,6 +41,7 @@ const modules = [
   ["reward-history", "Lịch sử reward", "Kinh tế", "Đối soát gift_code_histories theo dữ liệu game", "analyst"],
   ["custom-items", "Vật phẩm tùy biến", "Nội dung", "Tạo và chỉnh catalog item có validation", "operator"],
   ["shop", "Cửa hàng", "Nội dung", "Shopcoin và hàng hóa NPC từ stores/store_data", "operator"],
+  ["consignment", "Kí gửi Shinwa", "Kinh tế", "Quản lý listing NPC Shinwa, giá, người bán, trạng thái, hạn và item detail", "admin"],
   ["events", "Event Control", "Nội dung", "Catalog, vật phẩm rơi, điểm/top và cấu hình chờ áp dụng sau restart Java", "operator"],
   ["rates", "Tỷ lệ game", "Nội dung", "EXP, level rate và option có phê duyệt", "admin"],
   ["bosses", "Quái & Boss", "Nội dung", "Metadata quái, boss, HP và bản đồ spawn", "operator"],
@@ -114,6 +115,42 @@ async function saveWorldBossNotification(user, body) {
   }
   await audit(user, "world-boss-notices", "world_boss_notification.saved", "world_boss_notification", String(id), "success", { serverId: config.serverId, bossGroup: config.bossGroup, eventType: config.eventType, enabled: config.enabled });
   return id;
+}
+
+const SHINWA_STATUS_LABELS = { 0: "Đang bán", 1: "Đã bán", 2: "Đã nhận lại" };
+
+function parseShinwaItem(serialized, optionNames) {
+  try {
+    const item = JSON.parse(serialized || "{}");
+    const options = Array.isArray(item.options) ? item.options.map(option => {
+      const id = Number(option?.[0]);
+      const param = Number(option?.[1] || 0);
+      return { id, name: optionNames.get(id) || `Option #${id}`, param };
+    }).filter(option => Number.isInteger(option.id) && option.id >= 0) : [];
+    return { itemId: Number(item.id || 0), quantity: Number(item.quantity || 1), isLock: Boolean(item.isLock), sys: Number(item.sys || 0), upgrade: Number(item.upgrade || 0), yen: Number(item.yen || 0), expire: Number(item.expire || -1), options, parseError: false };
+  } catch (error) {
+    return { itemId: 0, quantity: 0, isLock: false, sys: 0, upgrade: 0, yen: 0, expire: -1, options: [], parseError: true };
+  }
+}
+
+async function shinwaData(searchParams) {
+  const gameConfig = readGameProperties();
+  const serverId = Number(gameConfig["server.id"] || 0);
+  const page = Math.max(1, Number(searchParams.get("page") || 1));
+  const limit = Math.min(100, Math.max(10, Number(searchParams.get("limit") || 50)));
+  const offset = (page - 1) * limit;
+  const q = String(searchParams.get("q") || "").trim().slice(0, 80);
+  const status = searchParams.get("status");
+  const params = [serverId];
+  let where = "s.server_id = ?";
+  if (q) { where += " AND (s.seller LIKE CONCAT('%', ?, '%') OR i.name LIKE CONCAT('%', ?, '%') OR CAST(s.id AS CHAR) = ?)"; params.push(q, q, q); }
+  if (["0", "1", "2"].includes(status)) { where += " AND s.status = ?"; params.push(Number(status)); }
+  const [rows] = await pool.query(`SELECT s.id, s.server_id, s.seller, s.price, s.status, s.time, s.item, JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS item_id, i.name AS item_name, i.icon, i.type AS item_type, i.level AS item_level FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) WHERE ${where} ORDER BY s.status ASC, s.id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+  const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM shinwa s LEFT JOIN item i ON i.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(s.item, '$.id')) AS UNSIGNED) WHERE ${where}`, params);
+  const [optionRows] = await pool.query("SELECT id, name FROM item_option ORDER BY id");
+  const optionNames = new Map(optionRows.map(row => [Number(row.id), row.name]));
+  const normalized = rows.map(row => { const item = parseShinwaItem(row.item, optionNames); return { id: row.id, server_id: row.server_id, seller: row.seller, price: row.price, status: row.status, status_label: SHINWA_STATUS_LABELS[row.status] || `Trạng thái #${row.status}`, time: row.time, item_id: item.itemId || Number(row.item_id || 0), item_name: row.item_name || `Vật phẩm #${item.itemId || row.item_id || "?"}`, icon: row.icon, item_type: row.item_type, item_level: row.item_level, quantity: item.quantity, is_lock: item.isLock, sys: item.sys, upgrade: item.upgrade, yen: item.yen, expire: item.expire, options: item.options, parse_error: item.parseError }; });
+  return { rows: normalized, total: Number(countRows[0]?.total || 0), page, limit, statuses: SHINWA_STATUS_LABELS };
 }
 
 async function eventControlData() {
@@ -855,6 +892,10 @@ async function api(req, res, url) {
     if (!requireUser(user, res, "analyst")) return;
     writeJson(res, 200, await worldBossNotificationData()); return;
   }
+  if (req.method === "GET" && url.pathname === "/api/shinwa") {
+    if (!requireUser(user, res, "analyst")) return;
+    writeJson(res, 200, await shinwaData(url.searchParams)); return;
+  }
   if (req.method === "GET" && url.pathname === "/api/monsters") {
     if (!requireUser(user, res, "analyst")) return;
     const boss = url.searchParams.get("boss") === "1" ? 1 : 0;
@@ -1307,6 +1348,38 @@ async function api(req, res, url) {
       await audit(user, "world-boss-notices", "world_boss_notification.tested", "world_boss_notification", String(id), "failed", { error: error.message || "unknown" });
       throw error;
     }
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/shinwa-update") {
+    if (!requireUser(user, res, "admin")) return;
+    const body = await readJson(req);
+    const id = Number(body.id); const action = String(body.action || "");
+    const price = Number(body.price); const time = Number(body.time);
+    const confirmation = String(body.confirmation || "");
+    if (!Number.isInteger(id) || id < 1 || !["update", "expire"].includes(action)) throw new Error("Kí gửi hoặc thao tác không hợp lệ.");
+    if (action === "update" && (!Number.isInteger(price) || price < 1 || price > 2000000000 || !Number.isInteger(time) || time < 1 || time > 2592000)) throw new Error("Giá phải từ 1 đến 2.000.000.000 xu, thời hạn từ 1 giây đến 30 ngày.");
+    if (confirmation !== `${action === "expire" ? "EXPIRE" : "UPDATE"} SHINWA ${id}`) throw new Error("Mã xác nhận kí gửi không hợp lệ.");
+    const gameConfig = readGameProperties(); const serverId = Number(gameConfig["server.id"] || 0);
+    const connection = await pool.getConnection();
+    let listing;
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query("SELECT id, seller, price, status, time FROM shinwa WHERE id = ? AND server_id = ? LIMIT 1 FOR UPDATE", [id, serverId]);
+      if (!rows[0]) throw new Error("Không tìm thấy tin kí gửi trên server hiện tại.");
+      if (Number(rows[0].status) !== 0) throw new Error("Chỉ được chỉnh tin đang bán; tin đã mua/nhận lại không thể sửa.");
+      if (action === "expire") await connection.query("UPDATE shinwa SET time = 0 WHERE id = ? AND server_id = ? AND status = 0 LIMIT 1", [id, serverId]);
+      else await connection.query("UPDATE shinwa SET price = ?, time = ? WHERE id = ? AND server_id = ? AND status = 0 LIMIT 1", [price, time, id, serverId]);
+      listing = { ...rows[0], price: action === "expire" ? rows[0].price : price, time: action === "expire" ? 0 : time };
+      await connection.commit();
+    } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+    let runtime = { synced: false, found: false };
+    try {
+      const response = await runtimeControlRequest("/api/control/shinwa-sync", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ uniqueId:id, price:Number(listing.price), time:Number(listing.time), status:0 }) });
+      runtime = { synced: true, found: Boolean(response.found) };
+    } catch (error) {
+      runtime = { synced: false, found: false, error: error.message || "Runtime chưa đồng bộ" };
+    }
+    await audit(user, "consignment", `shinwa.${action}`, "shinwa", String(id), "success", { seller: listing.seller, price: listing.price, time: listing.time, runtime });
+    writeJson(res, 200, { ok: true, runtime }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/notice-broadcast") {
     if (!requireUser(user, res, "moderator")) return;
