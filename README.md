@@ -43,6 +43,7 @@ Repository này đóng gói một quy trình triển khai hoàn chỉnh cho serv
 ## 🧭 Mục lục
 
 - [Bắt đầu trong 60 giây](#-bắt-đầu-trong-60-giây)
+- [Chạy server trên Termux](#-chạy-server-trên-termux)
 - [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
 - [Cài đặt đầy đủ](#-cài-đặt-đầy-đủ)
 - [Cấu hình database](#-cấu-hình-database)
@@ -65,6 +66,107 @@ curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download
 Sau khi cài xong, mở panel tại [`http://127.0.0.1:18080`](http://127.0.0.1:18080). Launcher sẽ tự cài package cần thiết, chuẩn bị MariaDB, import SQL nếu database chưa có bảng, build JAR và khởi động game ở chế độ headless.
 
 > **Lưu ý:** Nếu Termux hỏi quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage`. Thông thường server vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
+
+## 📱 Chạy server trên Termux
+
+Đây là quy trình khuyến nghị khi cài từ source GitHub trên Termux. Mở ứng dụng Termux chính thức hoặc bản F-Droid, sau đó chạy từng khối lệnh sau:
+
+### 1. Cài dependency và tải source
+
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git curl
+cd "$HOME"
+git clone https://github.com/anhduc2003/Ninja-school-offline-.git
+cd Ninja-school-offline-
+chmod +x run-server.sh scripts/*.sh admin-panel/*.sh
+```
+
+Nếu thư mục repository đã tồn tại, không chạy lại `git clone`; hãy cập nhật bằng:
+
+```bash
+cd "$HOME/Ninja-school-offline-"
+git pull --ff-only origin main
+```
+
+### 2. Chuẩn bị Java, Maven, Node.js và MariaDB
+
+```bash
+bash scripts/setup-termux.sh
+```
+
+Script sẽ cài hoặc kiểm tra OpenJDK 17/21, Maven, Node.js, MariaDB; tạo datadir MariaDB local, cấu hình socket/port local và tạo `config.properties` từ file mẫu nếu file chưa tồn tại. Không commit file `config.properties` lên GitHub.
+
+### 3. Khởi tạo database và build Java
+
+```bash
+bash scripts/init-db.sh
+mvn -DskipTests package
+```
+
+`init-db.sh` chỉ import `SQL/nsoz.sql` khi database chưa có dữ liệu tương ứng; không dùng lệnh reset database người chơi. Có thể chạy kiểm tra đầy đủ trước khi mở server:
+
+```bash
+mvn test
+```
+
+### 4. Chạy toàn bộ game stack
+
+```bash
+bash run-server.sh
+```
+
+Launcher sẽ đồng bộ source an toàn, khởi động MariaDB, kiểm tra migration Gift Code, khởi động Ninja Control Room trước Java, sau đó chạy game server headless và scheduler. Các endpoint local sau khi khởi động thành công là:
+
+| Thành phần | Địa chỉ |
+|---|---|
+| Game server | `127.0.0.1:14444` |
+| Ninja Control Room | [`http://127.0.0.1:18080`](http://127.0.0.1:18080) |
+| Runtime bridge | `127.0.0.1:18081` khi đã cấu hình token |
+| MariaDB | `127.0.0.1:3306` |
+
+Để tránh launcher tự đồng bộ source trong một lần chạy, dùng `NSO_AUTO_SYNC=0 bash run-server.sh`. Nếu muốn giới hạn bộ nhớ Java trên điện thoại yếu, dùng ví dụ `JAVA_OPTS='-Xms128m -Xmx512m' bash run-server.sh`.
+
+### 5. Theo dõi và dừng server
+
+Mở một phiên Termux khác để xem log:
+
+```bash
+cd "$HOME/Ninja-school-offline-"
+tail -f logs/server.log
+```
+
+Dừng theo thứ tự an toàn:
+
+```bash
+cd "$HOME/Ninja-school-offline-"
+bash scripts/stop-server.sh
+bash admin-panel/stop-panel.sh
+bash scripts/stop-db.sh
+```
+
+Kiểm tra nhanh trạng thái process và port mà không thay đổi dữ liệu:
+
+```bash
+ps -ef | grep -E 'java|mariadbd|server.mjs|scheduler.mjs' | grep -v grep
+ss -ltn | grep -E ':(3306|14444|18080|18081)\\b'
+```
+
+### 6. Cho phép Termux chạy nền
+
+Android có thể dừng tiến trình khi khóa màn hình hoặc bật tiết kiệm pin. Hãy mở **Settings → Apps → Termux → Battery**, chọn **Unrestricted/Không hạn chế** nếu thiết bị hỗ trợ. Khi launcher nhận diện được lệnh này, có thể giữ CPU thức trong lúc server chạy bằng:
+
+```bash
+termux-wake-lock
+```
+
+Sau khi dừng server hoàn toàn, nhả wake lock bằng:
+
+```bash
+termux-wake-unlock
+```
+
+> **Quan trọng:** Không public port `14444`, `18080`, `18081` hoặc `3306` trực tiếp ra Internet. Control Room và database được thiết kế local-only; nếu cần server 24/7 nên dùng máy Linux/hosting có giám sát thay vì điện thoại cá nhân.
 
 ## 🧰 Yêu cầu hệ thống
 
