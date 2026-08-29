@@ -37,7 +37,7 @@ public class AttackTarget implements IAttack {
                 owner.useSkillBuff((byte) (target.x > owner.x ? 1 : -1), skill);
             }
         }
-        owner.vSkillFight.sort((o1, o2) -> (new Integer(o2.level).compareTo((new Integer(o1.level)))));
+        owner.vSkillFight.sort((o1, o2) -> Integer.compare(o2.level, o1.level));
         for (Skill skill : owner.vSkillFight) {
             if (!skill.isCooldown() && skill.template.type == Skill.SKILL_CLICK_USE_ATTACK) {
                 int num = 0;

@@ -159,7 +159,7 @@ public class War {
             }
             list.add(clone);
         }
-        list.sort((m1, m2) -> (new Integer(m2.point).compareTo((new Integer(m1.point)))));
+        list.sort((m1, m2) -> Integer.compare(m2.point, m1.point));
         int size = list.size();
         if (size > 10) {
             size = 10;
@@ -200,7 +200,7 @@ public class War {
                 }
                 list.add(clone);
             }
-            list.sort((m1, m2) -> (new Integer(m2.point).compareTo((new Integer(m1.point)))));
+            list.sort((m1, m2) -> Integer.compare(m2.point, m1.point));
             _char.isRewarded = true;
             int quantity = pointCT / 200;
             int quantityPhao = pointCT / 10;

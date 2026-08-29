@@ -112,7 +112,7 @@ public class ThienDiaData {
 
     public void sort() {
         synchronized (rankings) {
-            rankings.sort((o1, o2) -> (new Integer(o1.getRanked()).compareTo((new Integer(o2.getRanked())))));
+            rankings.sort((o1, o2) -> Integer.compare(o1.getRanked(), o2.getRanked()));
             int i = 1;
             for (Ranking rank : rankings) {
                 rank.setRanked(i++);

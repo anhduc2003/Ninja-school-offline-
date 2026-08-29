@@ -24,5 +24,6 @@ public class Card {
     @Builder.Default
     private long expire = -1;
     private double rate;
-     private boolean isLocked = false;
+    @Builder.Default
+    private boolean isLocked = false;
 }
