@@ -15,6 +15,8 @@ describe("Gift Code lifecycle auto-migration", () => {
     expect(migrate).toBeGreaterThan(startDb);
     expect(migrate).toBeLessThan(startJava);
     expect(migrate).toBeLessThan(startPanel);
+    expect(migration).toContain("SELECT 1 FROM information_schema.statistics");
+    expect(migration).toContain("LIMIT 1;");
     expect(migration).toContain("Không import/reset dữ liệu cũ");
   });
 

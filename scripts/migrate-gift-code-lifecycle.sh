@@ -34,7 +34,7 @@ has_column() {
   "${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='gift_codes' AND column_name='$1';" | grep -qx '1'
 }
 has_index() {
-  "${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='gift_codes' AND index_name='$1';" | grep -qx '1'
+  "${MYSQL[@]}" -N -B -e "SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='gift_codes' AND index_name='$1' LIMIT 1;" | grep -qx '1'
 }
 
 "${MYSQL[@]}" -e "SELECT 1 FROM gift_codes LIMIT 1;" >/dev/null

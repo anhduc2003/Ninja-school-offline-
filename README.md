@@ -339,7 +339,7 @@ NSO_SYNC_BOOTSTRAP=0 bash run-server.sh
 | MariaDB không khởi động | Xem `logs/mariadb.log`; bảo đảm không có instance cũ dùng cùng datadir và chạy lại `bash scripts/init-db.sh`. |
 | Panel báo database offline | Kiểm tra `db.host`, `db.port`, credential trong `config.properties` và xem `logs/admin-panel.log`. |
 | Java build lỗi | Kiểm tra JDK/Maven, chạy `mvn test` và xem dependency cache; repository target Java 17+. |
-| Gift Code migration lỗi | Xem `logs/gift-code-migration.log`, bảo đảm user MariaDB có quyền `ALTER`, rồi chạy `bash scripts/migrate-gift-code-lifecycle.sh`. |
+| Gift Code migration lỗi | Với bản mới, migration đã idempotent và tự nhận diện composite index nhiều cột. Chạy `git pull --ff-only origin main`, sau đó `bash scripts/migrate-gift-code-lifecycle.sh`; không xóa index hoặc reset database. Xem `logs/gift-code-migration.log` nếu còn lỗi quyền `ALTER`. |
 | Panel không cập nhật source | Xem `tail -n 50 logs/sync.log`; kiểm tra source local sạch và Java đã dừng. |
 | `run-server.sh: No such file or directory` | Đang ở sai thư mục. Chạy `cd "$HOME/Ninja-school-offline-"` rồi `test -f run-server.sh` trước khi chạy `bash ./run-server.sh`. Nếu vẫn không có, chạy `find "$HOME" -maxdepth 3 -type f -name run-server.sh` hoặc clone repository lại. |
 | Android dừng server nền | Giữ Termux không bị battery optimization, cân nhắc `termux-wake-lock` và theo dõi `logs/server.log`. |

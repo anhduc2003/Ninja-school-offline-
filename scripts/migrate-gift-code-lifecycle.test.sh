@@ -30,7 +30,12 @@ elif [[ "$query" == *"ADD COLUMN"* ]]; then
   sed -n 's/.*ADD COLUMN \([a-z_]*\).*/\1/p' <<<"$query" >> "$state/columns"
   printf '%s\n' "$query" >> "$state/alters"
 elif [[ "$query" == *"ADD INDEX"* ]]; then
-  sed -n 's/.*ADD INDEX \([a-z_]*\).*/\1/p' <<<"$query" >> "$state/indexes"
+  index="$(sed -n 's/.*ADD INDEX \([a-z_]*\).*/\1/p' <<<"$query")"
+  if [ "$index" = "gift_codes_lifecycle_idx" ]; then
+    printf '%s\n' "$index" "$index" "$index" "$index" "$index" >> "$state/indexes"
+  else
+    printf '%s\n' "$index" "$index" >> "$state/indexes"
+  fi
   printf '%s\n' "$query" >> "$state/alters"
 fi
 EOF
@@ -43,7 +48,7 @@ run_migration() {
 ROOT_DIR_SOURCE="${ROOT_DIR}"
 run_migration
 test "$(sort "${STATE_DIR}/columns" | tr '\n' ' ')" = 'disabled max_redemptions redemption_count starts_at '
-test "$(sort "${STATE_DIR}/indexes" | tr '\n' ' ')" = 'gift_codes_lifecycle_idx gift_codes_redemption_idx '
+test "$(sort -u "${STATE_DIR}/indexes" | tr '\n' ' ')" = 'gift_codes_lifecycle_idx gift_codes_redemption_idx '
 test "$(wc -l < "${STATE_DIR}/alters")" -eq 6
 run_migration
 test "$(wc -l < "${STATE_DIR}/alters")" -eq 6
