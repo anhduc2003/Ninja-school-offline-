@@ -65,6 +65,16 @@ curl -fsSL https://github.com/anhduc2003/Ninja-school-offline-/releases/download
 
 Sau khi cài xong, mở panel tại [`http://127.0.0.1:18080`](http://127.0.0.1:18080). Launcher sẽ tự cài package cần thiết, chuẩn bị MariaDB, import SQL nếu database chưa có bảng, build JAR và khởi động game ở chế độ headless.
 
+> **Quan trọng:** Termux thường mở tại thư mục `$HOME`, còn `run-server.sh` nằm trong thư mục repository. Vì vậy không chạy `bash run-server.sh` ngay tại dấu nhắc `~` nếu chưa chuyển thư mục. Hãy chạy:
+>
+> ```bash
+> cd "$HOME/Ninja-school-offline-"
+> test -f run-server.sh && echo "Đã tìm thấy launcher" || echo "Không tìm thấy repository"
+> bash ./run-server.sh
+> ```
+>
+> Nếu bạn cài bằng `INSTALL_DIR` khác, thay đường dẫn trên bằng thư mục đó, ví dụ `cd "$HOME/ninja-server"`.
+
 > **Lưu ý:** Nếu Termux hỏi quyền truy cập bộ nhớ Android, có thể chạy `termux-setup-storage`. Thông thường server vẫn hoạt động trong thư mục `$HOME` mà không cần quyền này.
 
 ## 📱 Chạy server trên Termux
@@ -331,6 +341,7 @@ NSO_SYNC_BOOTSTRAP=0 bash run-server.sh
 | Java build lỗi | Kiểm tra JDK/Maven, chạy `mvn test` và xem dependency cache; repository target Java 17+. |
 | Gift Code migration lỗi | Xem `logs/gift-code-migration.log`, bảo đảm user MariaDB có quyền `ALTER`, rồi chạy `bash scripts/migrate-gift-code-lifecycle.sh`. |
 | Panel không cập nhật source | Xem `tail -n 50 logs/sync.log`; kiểm tra source local sạch và Java đã dừng. |
+| `run-server.sh: No such file or directory` | Đang ở sai thư mục. Chạy `cd "$HOME/Ninja-school-offline-"` rồi `test -f run-server.sh` trước khi chạy `bash ./run-server.sh`. Nếu vẫn không có, chạy `find "$HOME" -maxdepth 3 -type f -name run-server.sh` hoặc clone repository lại. |
 | Android dừng server nền | Giữ Termux không bị battery optimization, cân nhắc `termux-wake-lock` và theo dõi `logs/server.log`. |
 
 ## 🔐 An toàn và giới hạn
