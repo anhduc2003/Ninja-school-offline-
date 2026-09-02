@@ -1714,6 +1714,44 @@ async function api(req, res, url) {
       throw error;
     }
   }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-create-account") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req);
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+    const playerName = String(body.playerName || "").trim();
+    const gender = Number(body.gender ?? 0);
+    const playerClass = Number(body.playerClass ?? 0);
+    if (!validateGameUsername(username) || password.length < 8 || password.length > 100) throw new Error("Username cần 3-30 ký tự chữ/số/gạch dưới; mật khẩu cần 8-100 ký tự.");
+    if (!playerName || playerName.length < 2 || playerName.length > 15) throw new Error("Tên nhân vật cần 2-15 ký tự.");
+    if (!Number.isInteger(gender) || gender < 0 || gender > 2) throw new Error("Giới tính không hợp lệ.");
+    if (!Number.isInteger(playerClass) || playerClass < 0) throw new Error("Class không hợp lệ.");
+    const [existingUser] = await pool.query("SELECT id FROM users WHERE username = ? LIMIT 1", [username]);
+    if (existingUser[0]) throw new Error("Username đã tồnại.");
+    const passwordHash = await hashGamePassword(password);
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [userResult] = await conn.query("INSERT INTO users (username, password, status, activated, online, luong, coin) VALUES (?, ?, 1, 1, 1, 999999, 999999)", [username, passwordHash]);
+      const userId = userResult.insertId;
+      const defaultData = JSON.stringify({sevenbeasts_id:-1,numberUseExpanedBag:0,pointAo:0,limitKyNangSo:0,auto:{type_pick_item:0,range:-1},pointPhu:0,not_received_exp:false,pointVuKhi:0,countLoopBoss:2,pointUyDanh:0,type_sevenbeasts:-1,lastTimeOutClan:-1,countGlory:20,pointNon:0,countPB:1,timeCountDown:0,countUseItemGlory:6,hieuChien:0,limitBangHoa:0,count_arena:1,pointNgocBoi:0,exp:0,pointPB:0,pointTinhTu:0,reward:[false,false,false,false,false],limitPhongLoi:0,pointGangTay:0,tayTiemNang:0,tayKyNang:0,war:{rewarded:false,faction:-1,dead:0,time:-1,kill:0,point:0},pointNhan:0,maskId:-1,pointLien:0,taskOrder:"[]",countEnterFujukaSanctuary:1,pointGiay:0,countUseItemDungeo:1,countFinishDay:20,levelUpTime:-1,expDown:0,diemvxmm:0,countUseItemBeast:2,limitTiemNangSo:0,coinMax:1500000000,pointQuan:0});
+      const [playerResult] = await conn.query("INSERT INTO players(user_id, server_id, name, gender, class, data, point, potential, spoint, skill, equiped, fashion, bijuu, map, saveCoordinate, head, xu, xuInBox, yen, numberCellBag, numberCellBox, bag, box, onCSkill, onOSkill, onKSkill, mount, effect, friends, enemies, taskId, online) VALUES (?, ?, ?, ?, ?, ?, 0, '[15,5,5,5]', 0, '[{\"id\":0,\"point\":0}]', '[]', '[]', '[]', '[22,579,96]', 22, 14, 0, 0, 0, 30, 30, '[]', '[]', '[]', '[-1,-1,-1,-1,-1]', '[-1,-1,-1]', '[]', '[]', '[]', '[]', 0, 1)", [userId, 1, playerName, gender, playerClass, defaultData]);
+      const charId = playerResult.insertId;
+      const [botResult] = await conn.query("INSERT INTO panel_bots (char_id, name, enabled) VALUES (?, ?, 1)", [charId, playerName]);
+      await conn.commit();
+      try {
+        const response = await runtimeControlRequest("/api/control/bot/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
+        await audit(user, "bots", "bot.account_created_started", "panel_bot", String(charId), "success", response);
+      } catch (error) {
+        await audit(user, "bots", "bot.account_create_start.failed", "panel_bot", String(charId), "failed", { error: error.message || "unknown" });
+      }
+      await audit(user, "bots", "bot.account_created", "panel_bot", String(charId), "success", { username, playerName, gender, playerClass });
+      writeJson(res, 200, { ok: true, userId, charId, botId: botResult.insertId, username, playerName }); return;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally { conn.release(); }
+  }
   writeJson(res, 404, { error: "Không tìm thấy API." });
 }
 
