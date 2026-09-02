@@ -1,5 +1,6 @@
 package Exe_Z.bot.player;
 
+import Exe_Z.constants.MapName;
 import Exe_Z.db.jdbc.DbManager;
 import Exe_Z.item.Equip;
 import Exe_Z.item.Item;
@@ -50,13 +51,22 @@ public class BotPlayer {
             botChar.hp = botChar.maxHP;
             botChar.mp = botChar.maxMP;
             botChar.isDead = false;
+            if (botChar.head < 0) {
+                botChar.head = botChar.gender == 0 ? 28 : 26;
+            }
             int map = botChar.mapId;
             int zoneId = NinjaUtils.randomZoneId(map);
             if (zoneId == -1) {
-                map = botChar.saveCoordinate;
+                map = botChar.saveCoordinate > 0 ? botChar.saveCoordinate : MapName.LANG_TONE;
                 zoneId = NinjaUtils.randomZoneId(map);
+                if (zoneId == -1) {
+                    zoneId = 0;
+                }
                 short[] xy = NinjaUtils.getXY(map);
-                botChar.setXY(xy[0], xy[1]);
+                if (xy != null) {
+                    botChar.setXY(xy[0], xy[1]);
+                }
+                botChar.mapId = (short) map;
             }
             ServerManager.addChar(botChar);
             MapManager.getInstance().joinZone(botChar, map, zoneId);
@@ -64,7 +74,7 @@ public class BotPlayer {
             active = true;
             lastSave = System.currentTimeMillis();
             setOnlineInDb(true);
-            Log.info("BotPlayer started: char=" + botChar.name + " map=" + map + " zone=" + zoneId);
+            Log.info("BotPlayer started: char=" + botChar.name + " map=" + map + " zone=" + zoneId + " head=" + botChar.head);
             return true;
         } catch (Exception e) {
             Log.error("BotPlayer start error", e);
@@ -79,10 +89,31 @@ public class BotPlayer {
         if (ai != null) {
             ai.update(now);
         }
+        wander(now);
         if (now - lastSave > SAVE_INTERVAL) {
             save();
             lastSave = now;
         }
+    }
+
+    private long lastMoveTime = 0;
+    private short targetX = -1;
+    private short targetY = -1;
+
+    public void wander(long now) {
+        if (botChar == null || botChar.zone == null) {
+            return;
+        }
+        if (now - lastMoveTime < 3000) {
+            return;
+        }
+        lastMoveTime = now;
+        if (targetX < 0 || Math.abs(botChar.x - targetX) < 20) {
+            targetX = (short) (100 + NinjaUtils.nextInt(500));
+            targetY = (short) (100 + NinjaUtils.nextInt(300));
+        }
+        botChar.x = (short) (botChar.x + (targetX > botChar.x ? 5 : -5));
+        botChar.y = (short) (botChar.y + (targetY > botChar.y ? 3 : -3));
     }
 
     public void stop() {
@@ -106,7 +137,7 @@ public class BotPlayer {
         try {
             java.sql.Connection conn = DbManager.getInstance().getConnection(DbManager.GAME);
             PreparedStatement stmt = conn.prepareStatement(
-                "UPDATE `player` SET `online` = ? WHERE `id` = ? LIMIT 1;");
+                "UPDATE `players` SET `online` = ? WHERE `id` = ? LIMIT 1;");
             stmt.setInt(1, online ? 1 : 0);
             stmt.setInt(2, botChar.id);
             stmt.executeUpdate();
@@ -123,7 +154,7 @@ public class BotPlayer {
         try {
             java.sql.Connection conn = DbManager.getInstance().getConnection(DbManager.GAME);
             PreparedStatement stmt = conn.prepareStatement(
-                    "UPDATE `player` SET `hp`=?,`mp`=?,`x`=?,`y`=?,`map_id`=?,`task_id`=? WHERE `id`=?;");
+                    "UPDATE `players` SET `hp`=?,`mp`=?,`x`=?,`y`=?,`map_id`=?,`task_id`=? WHERE `id`=?;");
             stmt.setInt(1, botChar.hp);
             stmt.setInt(2, botChar.mp);
             stmt.setShort(3, botChar.x);
