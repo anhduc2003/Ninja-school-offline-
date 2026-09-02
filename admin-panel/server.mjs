@@ -46,6 +46,7 @@ const modules = [
   ["events", "Event Control", "Nội dung", "Catalog, vật phẩm rơi, điểm/top và cấu hình chờ áp dụng sau restart Java", "operator"],
   ["rates", "Tỷ lệ game", "Nội dung", "EXP, level rate và option có phê duyệt", "admin"],
   ["bosses", "Quái & Boss", "Nội dung", "Metadata quái, boss, HP và bản đồ spawn", "operator"],
+  ["bots", "Bot Player", "Vận hành", "Quản lý bot tự chơi: danh sách, bật/tắt, thêm/xoá và theo dõi trạng thái", "operator"],
   ["notices", "Thông báo", "Vận hành", "Cập nhật options.notify theo Java contract; broadcast runtime không tự động hóa", "moderator"],
   ["world-boss-notices", "Thông báo Boss thế giới", "Vận hành", "Cấu hình thông báo Boss xuất hiện/bị hạ theo group, server và cooldown", "admin"],
   ["maintenance", "Bảo trì", "Vận hành", "Draft/approval window và runbook restart; không dừng Java chỉ bằng SQL", "admin"],
@@ -640,6 +641,16 @@ async function ensureSchema() {
       sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX panel_world_boss_log_config_idx (config_id, sent_at),
       INDEX panel_world_boss_log_time_idx (sent_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS panel_bots (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      char_id INT NOT NULL,
+      name VARCHAR(80) NOT NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY panel_bots_char_id_unique (char_id),
+      INDEX panel_bots_enabled_idx (enabled)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   ];
   for (const statement of statements) await pool.query(statement);
@@ -1637,6 +1648,61 @@ async function api(req, res, url) {
     });
     await audit(user, "backups", "backup.created", "database_backup", filename, "success");
     writeJson(res, 200, { ok: true, filename }); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/bots") {
+    if (!requireUser(user, res, "operator")) return;
+    const [rows] = await pool.query(`SELECT b.id, b.char_id, b.name, b.enabled, b.created_at, b.updated_at, p.name AS player_name, p.online, p.map, p.x, p.y FROM panel_bots b LEFT JOIN players p ON p.id = b.char_id ORDER BY b.id ASC`);
+    writeJson(res, 200, { rows }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-create") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req);
+    const charId = Number(body.charId);
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!Number.isInteger(charId) || charId < 1 || !name || body.confirmation !== `CREATE BOT ${charId}`) throw new Error("charId, tên bot hoặc mã xác nhận không hợp lệ.");
+    const [existing] = await pool.query("SELECT id FROM players WHERE id = ? LIMIT 1", [charId]);
+    if (!existing[0]) throw new Error("Không tìm thấy nhân vật với charId đã chọn.");
+    const [dup] = await pool.query("SELECT id FROM panel_bots WHERE char_id = ? LIMIT 1", [charId]);
+    if (dup[0]) throw new Error("Nhân vật này đã là bot.");
+    const [result] = await pool.query("INSERT INTO panel_bots (char_id, name) VALUES (?, ?)", [charId, name]);
+    await audit(user, "bots", "bot.created", "panel_bot", String(result.insertId), "success", { charId, name });
+    writeJson(res, 200, { ok: true, id: result.insertId }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-toggle") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req);
+    const id = Number(body.id);
+    const enabled = Number(body.enabled) ? 1 : 0;
+    if (!Number.isInteger(id) || id < 1 || ![0, 1].includes(enabled) || body.confirmation !== `${enabled ? "ENABLE" : "DISABLE"} BOT ${id}`) throw new Error("Bot hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("UPDATE panel_bots SET enabled = ? WHERE id = ? LIMIT 1", [enabled, id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
+    await audit(user, "bots", enabled ? "bot.enabled" : "bot.disabled", "panel_bot", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-delete") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req);
+    const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `DELETE BOT ${id}`) throw new Error("Bot hoặc mã xác nhận không hợp lệ.");
+    const [result] = await pool.query("DELETE FROM panel_bots WHERE id = ? LIMIT 1", [id]);
+    if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
+    await audit(user, "bots", "bot.deleted", "panel_bot", String(id), "success");
+    writeJson(res, 200, { ok: true }); return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-control") {
+    if (!requireUser(user, res, "operator")) return;
+    const body = await readJson(req);
+    const action = String(body.action || "").trim().toLowerCase();
+    const charId = Number(body.charId);
+    if (!["start", "stop"].includes(action) || !Number.isInteger(charId) || charId < 1 || body.confirmation !== `${action.toUpperCase()} BOT ${charId}`) throw new Error("Thao tác bot hoặc mã xác nhận không hợp lệ.");
+    try {
+      const response = await runtimeControlRequest(`/api/control/bot/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
+      await audit(user, "bots", `bot.${action}`, "panel_bot", String(charId), "success", response);
+      writeJson(res, 200, { ok: true, ...response }); return;
+    } catch (error) {
+      await audit(user, "bots", `bot.${action}.failed`, "panel_bot", String(charId), "failed", { error: error.message || "unknown" });
+      throw error;
+    }
   }
   writeJson(res, 404, { error: "Không tìm thấy API." });
 }
