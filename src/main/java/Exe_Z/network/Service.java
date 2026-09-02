@@ -2640,12 +2640,26 @@ public class Service extends AbsService {
     public void requestIcon(Message ms) {
         try {
             int icon = ms.reader().readInt();
-            byte[] ab = GameData.getInstance().loadFile("Data/Img/Small/" + session.zoomLevel + "/Small" + icon + ".png");
+            byte[] ab = null;
+            int z = session.zoomLevel;
+            ab = GameData.getInstance().loadFile("Data/Img/Small/" + z + "/Small" + icon + ".png");
+            if ((ab == null || ab.length == 0) && z > 1) {
+                for (int fallback = 1; fallback <= 4; fallback++) {
+                    if (fallback == z) continue;
+                    ab = GameData.getInstance().loadFile("Data/Img/Small/" + fallback + "/Small" + icon + ".png");
+                    if (ab != null && ab.length > 0) break;
+                }
+            }
+            if (ab == null || ab.length == 0) {
+                ab = GameData.getInstance().loadFile("Data/Img/Small/" + z + "/Small0.png");
+            }
             Message mss = messageNotMap(CMD.REQUEST_ICON);
             DataOutputStream ds = mss.writer();
             ds.writeInt(icon);
-            ds.writeInt(ab.length);
-            ds.write(ab);
+            ds.writeInt(ab != null ? ab.length : 0);
+            if (ab != null) {
+                ds.write(ab);
+            }
             ds.flush();
             sendMessage(mss);
             mss.cleanup();

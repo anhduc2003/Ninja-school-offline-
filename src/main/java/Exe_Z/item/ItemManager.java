@@ -1,6 +1,8 @@
 package Exe_Z.item;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 import Exe_Z.db.jdbc.DbManager;
 import Exe_Z.model.Char;
@@ -35,13 +37,14 @@ public class ItemManager {
     public static final int[] BIJUU_OPTION_PARAM = new int[]{5, 5, 5, 5, 5, 5, 5, 5, 5,5, 5};
     
     private final ArrayList<ItemTemplate> listItemGloryTask = new ArrayList<>();
-    private final ArrayList<ItemTemplate> itemTemplates = new ArrayList<>();
-    private final ArrayList<ItemOptionTemplate> optionTemplates = new ArrayList<>();
+    private final Map<Integer, ItemTemplate> itemTemplates = new HashMap<>();
+    private final Map<Integer, ItemOptionTemplate> optionTemplates = new HashMap<>();
     @Getter
     private byte[] data;
 
     public void init() {
-        for (ItemTemplate template : itemTemplates) {
+        listItemGloryTask.clear();
+        for (ItemTemplate template : itemTemplates.values()) {
             if (template.level >= 10 && template.level <= 49 && template.fashion == -1) {
                 listItemGloryTask.add(template);
             }
@@ -52,16 +55,17 @@ public class ItemManager {
         return this.optionTemplates.size();
     }
 
-    public String getItemName(int index) {
-        return itemTemplates.get(index).name;
+    public String getItemName(int id) {
+        ItemTemplate t = itemTemplates.get(id);
+        return t != null ? t.name : null;
     }
 
-    public ItemTemplate getItemTemplate(int index) {
-        return itemTemplates.get(index);
+    public ItemTemplate getItemTemplate(int id) {
+        return itemTemplates.get(id);
     }
 
-    public ItemOptionTemplate getItemOptionTemplate(int index) {
-        return optionTemplates.get(index);
+    public ItemOptionTemplate getItemOptionTemplate(int id) {
+        return optionTemplates.get(id);
     }
 
     public void setData() {
@@ -70,12 +74,12 @@ public class ItemManager {
             DataOutputStream dos = new DataOutputStream(bas);
             dos.writeByte(Config.getInstance().getItemVersion());
             dos.writeByte(optionTemplates.size());
-            for (ItemOptionTemplate item : optionTemplates) {
+            for (ItemOptionTemplate item : optionTemplates.values()) {
                 dos.writeUTF(item.name);
                 dos.writeByte(item.type);
             }
             dos.writeShort(itemTemplates.size());
-            for (ItemTemplate item : itemTemplates) {
+            for (ItemTemplate item : itemTemplates.values()) {
                 dos.writeByte(item.type);
                 dos.writeByte(item.gender);
                 dos.writeUTF(item.name);
@@ -189,19 +193,19 @@ public class ItemManager {
     }
 
     public void add(ItemTemplate entry) {
-        itemTemplates.add(entry);
+        itemTemplates.put(entry.id, entry);
     }
 
     public void add(ItemOptionTemplate option) {
-        optionTemplates.add(option);
+        optionTemplates.put(option.id, option);
     }
 
     public void remove(ItemTemplate itemTemplate) {
-        itemTemplates.remove(itemTemplate);
+        itemTemplates.remove(itemTemplate.id);
     }
 
     public void remove(ItemOptionTemplate itemOptionTemplate) {
-        optionTemplates.remove(itemOptionTemplate);
+        optionTemplates.remove(itemOptionTemplate.id);
     }
 
 }
