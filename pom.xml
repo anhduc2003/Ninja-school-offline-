@@ -37,6 +37,18 @@
             <artifactId>socket.io-client</artifactId>
             <version>2.0.1</version>
         </dependency>
+        <!-- engine.io-client provides io.socket.emitter used by SocketIO.java -->
+        <dependency>
+            <groupId>io.socket</groupId>
+            <artifactId>engine.io-client</artifactId>
+            <version>2.0.0</version>
+        </dependency>
+        <!-- org.json types (org.json.JSONObject / JSONException) used across the socket and util packages -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20160810</version>
+        </dependency>
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
@@ -83,6 +95,12 @@
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
             <version>4.0.3</version>
+        </dependency>
+        <!-- HikariCP 4.x logs via SLF4J; declare the API so the runtime can resolve the bridge. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/commons-dbutils/commons-dbutils -->
         <dependency>
