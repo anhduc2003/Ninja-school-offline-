@@ -94,6 +94,24 @@ public class BotPlayerManager {
         }
     }
 
+    public void startAllBots() {
+        try (Connection conn = DbManager.getInstance().getConnection(DbManager.GAME);
+             PreparedStatement stmt = conn.prepareStatement("SELECT char_id FROM panel_bots WHERE enabled = 1")) {
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    int charId = rs.getInt("char_id");
+                    if (getBotByCharId(charId) == null) {
+                        BotPlayer bot = new BotPlayer(charId);
+                        bot.start();
+                        bots.add(bot);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            Log.error("BotPlayerManager startAllBots error", e);
+        }
+    }
+
     public BotPlayer getBotByCharId(int charId) {
         for (BotPlayer bot : bots) {
             if (bot.getCharId() == charId) {

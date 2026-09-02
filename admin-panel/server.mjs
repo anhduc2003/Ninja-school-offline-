@@ -1714,7 +1714,18 @@ async function api(req, res, url) {
       throw error;
     }
   }
-if (req.method === "POST" && url.pathname === "/api/actions/bot-create-account") {
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-start-all") {
+    if (!requireUser(user, res, "operator")) return;
+    try {
+      const response = await runtimeControlRequest("/api/control/bot/start-all", { method: "POST" });
+      await audit(user, "bots", "bot.start_all", "panel_bot", "all", "success", response);
+      writeJson(res, 200, { ok: true, ...response }); return;
+    } catch (error) {
+      await audit(user, "bots", "bot.start_all.failed", "panel_bot", "all", "failed", { error: error.message || "unknown" });
+      throw error;
+    }
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions/bot-create-account") {
     if (!requireUser(user, res, "operator")) return;
     const body = await readJson(req);
     const count = Math.min(Number(body.count) || 1, 50);
