@@ -364,7 +364,7 @@ const runtimeControl = {
 };
 
 async function runtimeControlRequest(path, options = {}) {
-  if (!runtimeControl.token) throw new Error("Runtime broadcast chưa được bật. Hãy đặt server.control.token trong config.properties rồi tạo lại config.local.json hoặc cập nhật admin-panel/data/config.local.json.");
+  if (!runtimeControl.token) throw new Error("Runtime broadcast chưa được bật. Hãy đặt server.control.token trong config.properties rồi tạo hoặc cập nhật admin-panel/config.local.json với runtimeControl.token tương ứng.");
   const response = await fetch(`http://${runtimeControl.host}:${runtimeControl.port}${path}`, {
     ...options,
     headers: { Accept: "application/json", Authorization: `Bearer ${runtimeControl.token}`, ...(options.headers || {}) },

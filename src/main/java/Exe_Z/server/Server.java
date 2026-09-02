@@ -1030,7 +1030,6 @@ public class Server {
             start = true;
             if (Config.getInstance().getBotPlayerCount() > 0) {
                 BotPlayerManager.getInstance().start();
-                BotPlayerManager.getInstance().loadFromDb();
             }
 
             id = 0;
