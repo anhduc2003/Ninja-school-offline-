@@ -63,6 +63,7 @@ public class BotPlayer {
             ai = new BotPlayerAI(this);
             active = true;
             lastSave = System.currentTimeMillis();
+            setOnlineInDb(true);
             Log.info("BotPlayer started: char=" + botChar.name + " map=" + map + " zone=" + zoneId);
             return true;
         } catch (Exception e) {
@@ -89,12 +90,30 @@ public class BotPlayer {
         if (ai != null) {
             ai.setRunning(false);
         }
+        setOnlineInDb(false);
         save();
         if (botChar != null) {
             botChar.outZone();
             ServerManager.removeChar(botChar);
         }
         Log.info("BotPlayer stopped: char=" + (botChar != null ? botChar.name : "null"));
+    }
+
+    private void setOnlineInDb(boolean online) {
+        if (botChar == null) {
+            return;
+        }
+        try {
+            java.sql.Connection conn = DbManager.getInstance().getConnection(DbManager.GAME);
+            PreparedStatement stmt = conn.prepareStatement(
+                "UPDATE `player` SET `online` = ? WHERE `id` = ? LIMIT 1;");
+            stmt.setInt(1, online ? 1 : 0);
+            stmt.setInt(2, botChar.id);
+            stmt.executeUpdate();
+            stmt.close();
+        } catch (SQLException e) {
+            Log.error("BotPlayer setOnline error", e);
+        }
     }
 
     private void save() {

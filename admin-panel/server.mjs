@@ -1665,8 +1665,14 @@ async function api(req, res, url) {
     if (!existing[0]) throw new Error("Không tìm thấy nhân vật với charId đã chọn.");
     const [dup] = await pool.query("SELECT id FROM panel_bots WHERE char_id = ? LIMIT 1", [charId]);
     if (dup[0]) throw new Error("Nhân vật này đã là bot.");
-    const [result] = await pool.query("INSERT INTO panel_bots (char_id, name) VALUES (?, ?)", [charId, name]);
+    const [result] = await pool.query("INSERT INTO panel_bots (char_id, name, enabled) VALUES (?, ?, 1)", [charId, name]);
     await audit(user, "bots", "bot.created", "panel_bot", String(result.insertId), "success", { charId, name });
+    try {
+      const response = await runtimeControlRequest("/api/control/bot/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
+      await audit(user, "bots", "bot.auto_started", "panel_bot", String(charId), "success", response);
+    } catch (error) {
+      await audit(user, "bots", "bot.auto_start.failed", "panel_bot", String(charId), "failed", { error: error.message || "unknown" });
+    }
     writeJson(res, 200, { ok: true, id: result.insertId }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/bot-toggle") {
