@@ -1659,7 +1659,8 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const charId = Number(body.charId);
     const name = String(body.name || "").trim().slice(0, 80);
-    if (!Number.isInteger(charId) || charId < 1 || !name || body.confirmation !== `CREATE BOT ${charId}`) throw new Error("charId, tên bot hoặc mã xác nhận không hợp lệ.");
+    if (!Number.isInteger(charId) || charId < 1 || !name) throw new Error("charId hoặc tên bot không hợp lệ.");
+    if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `CREATE BOT ${charId}`) throw new Error("Mã xác nhận không hợp lệ.");
     const [existing] = await pool.query("SELECT id FROM players WHERE id = ? LIMIT 1", [charId]);
     if (!existing[0]) throw new Error("Không tìm thấy nhân vật với charId đã chọn.");
     const [dup] = await pool.query("SELECT id FROM panel_bots WHERE char_id = ? LIMIT 1", [charId]);
@@ -1673,7 +1674,8 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const id = Number(body.id);
     const enabled = Number(body.enabled) ? 1 : 0;
-    if (!Number.isInteger(id) || id < 1 || ![0, 1].includes(enabled) || body.confirmation !== `${enabled ? "ENABLE" : "DISABLE"} BOT ${id}`) throw new Error("Bot hoặc mã xác nhận không hợp lệ.");
+    if (!Number.isInteger(id) || id < 1 || ![0, 1].includes(enabled)) throw new Error("Bot không hợp lệ.");
+    if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `${enabled ? "ENABLE" : "DISABLE"} BOT ${id}`) throw new Error("Mã xác nhận không hợp lệ.");
     const [result] = await pool.query("UPDATE panel_bots SET enabled = ? WHERE id = ? LIMIT 1", [enabled, id]);
     if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
     await audit(user, "bots", enabled ? "bot.enabled" : "bot.disabled", "panel_bot", String(id), "success");
@@ -1683,7 +1685,8 @@ async function api(req, res, url) {
     if (!requireUser(user, res, "operator")) return;
     const body = await readJson(req);
     const id = Number(body.id);
-    if (!Number.isInteger(id) || id < 1 || body.confirmation !== `DELETE BOT ${id}`) throw new Error("Bot hoặc mã xác nhận không hợp lệ.");
+    if (!Number.isInteger(id) || id < 1) throw new Error("Bot không hợp lệ.");
+    if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `DELETE BOT ${id}`) throw new Error("Mã xác nhận không hợp lệ.");
     const [result] = await pool.query("DELETE FROM panel_bots WHERE id = ? LIMIT 1", [id]);
     if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
     await audit(user, "bots", "bot.deleted", "panel_bot", String(id), "success");
@@ -1694,7 +1697,8 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const action = String(body.action || "").trim().toLowerCase();
     const charId = Number(body.charId);
-    if (!["start", "stop"].includes(action) || !Number.isInteger(charId) || charId < 1 || body.confirmation !== `${action.toUpperCase()} BOT ${charId}`) throw new Error("Thao tác bot hoặc mã xác nhận không hợp lệ.");
+    if (!["start", "stop"].includes(action) || !Number.isInteger(charId) || charId < 1) throw new Error("Thao tác bot không hợp lệ.");
+    if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `${action.toUpperCase()} BOT ${charId}`) throw new Error("Mã xác nhận không hợp lệ.");
     try {
       const response = await runtimeControlRequest(`/api/control/bot/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
       await audit(user, "bots", `bot.${action}`, "panel_bot", String(charId), "success", response);
