@@ -65,6 +65,7 @@ import Exe_Z.model.MountData;
 import Exe_Z.model.MountDataManager;
 import Exe_Z.network.Service;
 import Exe_Z.store.StoreManager;
+import Exe_Z.bot.player.BotPlayerManager;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -1027,6 +1028,9 @@ public class Server {
             server = new ServerSocket(port);
             RuntimeControlServer.start();
             start = true;
+            if (Config.getInstance().getBotPlayerCount() > 0) {
+                BotPlayerManager.getInstance().start();
+            }
 
             id = 0;
             Log.info("Start server Success!");

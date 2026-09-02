@@ -41,6 +41,7 @@ public class Config {
     private int port;
     private int controlPort = 18081;
     private String controlToken = "";
+    private int botPlayerCount = 0;
 
     // MySql
     private String dbHost;
@@ -160,6 +161,9 @@ public class Config {
             }
             if (props.containsKey("game.skill.version")) {
                 skillVersion = Integer.parseInt(props.getProperty("game.skill.version"));
+            }
+            if (props.containsKey("bot.player.count")) {
+                botPlayerCount = Integer.parseInt(props.getProperty("bot.player.count"));
             }
             if (props.containsKey("client.data.size.max")) {
                 messageSizeMax = Integer.parseInt(props.getProperty("client.data.size.max"));

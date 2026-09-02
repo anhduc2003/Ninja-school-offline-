@@ -56,3 +56,6 @@ open.historySQL=true
 server.control.host=127.0.0.1
 server.control.port=18081
 server.control.token=
+
+# Bot player automation (0 = disabled)
+# bot.player.count=5
