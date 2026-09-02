@@ -1651,7 +1651,7 @@ async function api(req, res, url) {
   }
   if (req.method === "GET" && url.pathname === "/api/bots") {
     if (!requireUser(user, res, "operator")) return;
-    const [rows] = await pool.query(`SELECT b.id, b.char_id, b.name, b.enabled, b.created_at, b.updated_at, p.name AS player_name, p.online, p.map, p.x, p.y FROM panel_bots b LEFT JOIN players p ON p.id = b.char_id ORDER BY b.id ASC`);
+    const [rows] = await pool.query(`SELECT b.id, b.char_id, b.name, b.enabled, b.created_at, b.updated_at, p.name AS player_name, p.online, p.map FROM panel_bots b LEFT JOIN players p ON p.id = b.char_id ORDER BY b.id ASC`);
     writeJson(res, 200, { rows }); return;
   }
   if (req.method === "POST" && url.pathname === "/api/actions/bot-create") {
