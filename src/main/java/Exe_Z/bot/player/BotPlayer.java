@@ -54,15 +54,8 @@ public class BotPlayer {
             if (botChar.head < 0) {
                 botChar.head = (short) (botChar.gender == 0 ? 28 : 26);
             }
-            if (botChar.taskMain == null) {
-                if (botChar.taskId <= 0) {
-                    botChar.taskId = 1;
-                }
-                try {
-                    botChar.takingTask();
-                } catch (Exception e) {
-                    Log.error("BotPlayer takingTask failed for char " + charId + ": " + e.getMessage());
-                }
+            if (botChar.taskId <= 0) {
+                botChar.taskId = 1;
             }
             int map = botChar.mapId;
             int zoneId = NinjaUtils.randomZoneId(map);
