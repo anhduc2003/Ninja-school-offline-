@@ -351,8 +351,10 @@ public final class RuntimeControlServer {
                 respond(exchange, 401, "{\"error\":\"Unauthorized\"}");
                 return;
             }
+            int before = BotPlayerManager.getInstance().getBots().size();
             BotPlayerManager.getInstance().startAllBots();
-            respond(exchange, 200, "{\"ok\":true}");
+            int after = BotPlayerManager.getInstance().getBots().size();
+            respond(exchange, 200, "{\"ok\":true,\"started\":" + (after - before) + ",\"total\":" + after + "}");
         } catch (Exception exception) {
             System.err.println("Bot start-all failed: " + exception.getMessage());
             respond(exchange, 500, "{\"error\":\"Bot start-all failed\"}");

@@ -54,10 +54,10 @@ public class BotPlayer {
             if (botChar.head < 0) {
                 botChar.head = (short) (botChar.gender == 0 ? 28 : 26);
             }
-            if (botChar.taskMain == null && botChar.taskId <= 0) {
-                botChar.taskId = 1;
-            }
-            if (botChar.taskMain == null && botChar.taskId > 0) {
+            if (botChar.taskMain == null) {
+                if (botChar.taskId <= 0) {
+                    botChar.taskId = 1;
+                }
                 botChar.takingTask();
             }
             int map = botChar.mapId;
