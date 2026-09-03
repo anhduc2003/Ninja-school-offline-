@@ -1684,6 +1684,18 @@ async function api(req, res, url) {
     if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `${enabled ? "ENABLE" : "DISABLE"} BOT ${id}`) throw new Error("Mã xác nhận không hợp lệ.");
     const [result] = await pool.query("UPDATE panel_bots SET enabled = ? WHERE id = ? LIMIT 1", [enabled, id]);
     if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
+    const [botRows] = await pool.query("SELECT char_id FROM panel_bots WHERE id = ? LIMIT 1", [id]);
+    const charId = Number(botRows[0]?.char_id || 0);
+    if (charId > 0) {
+      try {
+        const action = enabled ? "start" : "stop";
+        const response = await runtimeControlRequest(`/api/control/bot/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
+        await audit(user, "bots", `bot.${action}`, "panel_bot", String(charId), "success", response);
+      } catch (error) {
+        await audit(user, "bots", `bot.${enabled ? "start" : "stop"}.failed`, "panel_bot", String(charId), "failed", { error: error.message || "unknown" });
+        throw error;
+      }
+    }
     await audit(user, "bots", enabled ? "bot.enabled" : "bot.disabled", "panel_bot", String(id), "success");
     writeJson(res, 200, { ok: true }); return;
   }
@@ -1693,6 +1705,16 @@ async function api(req, res, url) {
     const id = Number(body.id);
     if (!Number.isInteger(id) || id < 1) throw new Error("Bot không hợp lệ.");
     if (body.confirmation !== undefined && body.confirmation !== null && body.confirmation !== `DELETE BOT ${id}`) throw new Error("Mã xác nhận không hợp lệ.");
+    const [botRows] = await pool.query("SELECT char_id FROM panel_bots WHERE id = ? LIMIT 1", [id]);
+    const charId = Number(botRows[0]?.char_id || 0);
+    if (charId > 0) {
+      try {
+        await runtimeControlRequest("/api/control/bot/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId }) });
+      } catch (error) {
+        await audit(user, "bots", "bot.delete.stop.failed", "panel_bot", String(id), "failed", { error: error.message || "unknown" });
+        throw error;
+      }
+    }
     const [result] = await pool.query("DELETE FROM panel_bots WHERE id = ? LIMIT 1", [id]);
     if (!result.affectedRows) throw new Error("Không tìm thấy bot.");
     await audit(user, "bots", "bot.deleted", "panel_bot", String(id), "success");

@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 public class BotPlayerManager {
 
     private static final BotPlayerManager instance = new BotPlayerManager();
-    private final List<BotPlayer> bots = new ArrayList<>();
+    private final List<BotPlayer> bots = new CopyOnWriteArrayList<>();
     private ScheduledExecutorService scheduler;
     private boolean running = false;
 
@@ -32,23 +33,22 @@ public class BotPlayerManager {
             return;
         }
         int botCount = Config.getInstance().getBotPlayerCount();
-        if (botCount <= 0) {
-            Log.info("BotPlayerManager: no bots configured");
-            return;
-        }
-        scheduler = Executors.newScheduledThreadPool(Math.min(botCount, 10));
-        for (int i = 0; i < botCount; i++) {
-            final int idx = i;
-            scheduler.scheduleAtFixedRate(() -> {
-                if (idx < bots.size()) {
-                    BotPlayer bot = bots.get(idx);
-                    if (bot != null && bot.isActive()) {
-                        bot.update(System.currentTimeMillis());
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            for (BotPlayer bot : bots) {
+                if (bot != null && bot.isActive()) {
+                    try {
+                        bot.update(now);
+                    } catch (Exception e) {
+                        Log.error("BotPlayerManager update error: charId=" + bot.getCharId(), e);
                     }
                 }
-            }, 1 + i, 1, TimeUnit.SECONDS);
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+        if (botCount > 0) {
+            loadAndAutoCreateBots(botCount);
         }
-        loadAndAutoCreateBots(botCount);
         running = true;
         Log.info("BotPlayerManager started with " + botCount + " bots (active=" + getActiveBotCount() + ")");
     }
@@ -67,7 +67,9 @@ public class BotPlayerManager {
     }
 
     public void addBot(BotPlayer bot) {
-        bots.add(bot);
+        if (bot != null && getBotByCharId(bot.getCharId()) == null) {
+            bots.add(bot);
+        }
     }
 
     public void removeBot(BotPlayer bot) {
@@ -90,7 +92,9 @@ public class BotPlayerManager {
 
     public void startAll() {
         for (BotPlayer bot : bots) {
-            bot.start();
+            if (!bot.isActive()) {
+                bot.start();
+            }
         }
     }
 

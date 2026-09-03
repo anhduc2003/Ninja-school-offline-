@@ -18,6 +18,7 @@ import Exe_Z.util.NinjaUtils;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import org.json.simple.JSONArray;
 
 public class BotPlayer {
 
@@ -157,14 +158,15 @@ public class BotPlayer {
         try {
             java.sql.Connection conn = DbManager.getInstance().getConnection(DbManager.GAME);
             PreparedStatement stmt = conn.prepareStatement(
-                    "UPDATE `players` SET `hp`=?,`mp`=?,`x`=?,`y`=?,`map_id`=?,`task_id`=? WHERE `id`=?;");
-            stmt.setInt(1, botChar.hp);
-            stmt.setInt(2, botChar.mp);
-            stmt.setShort(3, botChar.x);
-            stmt.setShort(4, botChar.y);
-            stmt.setShort(5, botChar.mapId);
-            stmt.setShort(6, botChar.taskId);
-            stmt.setInt(7, botChar.id);
+                    "UPDATE `players` SET `map`=?,`taskId`=?,`online`=? WHERE `id`=? LIMIT 1;");
+            JSONArray map = new JSONArray();
+            map.add((long) botChar.mapId);
+            map.add((long) botChar.x);
+            map.add((long) botChar.y);
+            stmt.setString(1, map.toJSONString());
+            stmt.setInt(2, botChar.taskId);
+            stmt.setInt(3, active ? 1 : 0);
+            stmt.setInt(4, botChar.id);
             stmt.executeUpdate();
             stmt.close();
         } catch (SQLException e) {

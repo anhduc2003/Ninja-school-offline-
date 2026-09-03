@@ -1028,9 +1028,9 @@ public class Server {
             server = new ServerSocket(port);
             RuntimeControlServer.start();
             start = true;
-            if (Config.getInstance().getBotPlayerCount() > 0) {
-                BotPlayerManager.getInstance().start();
-            }
+            // Keep the runtime scheduler available for bots created/started from
+            // the admin panel even when no startup bot count is configured.
+            BotPlayerManager.getInstance().start();
 
             id = 0;
             Log.info("Start server Success!");
