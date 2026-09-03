@@ -34,6 +34,7 @@ public final class RuntimeControlServer {
     private static final String BOT_STOP_PATH = "/api/control/bot/stop";
     private static final String BOT_ADD_PATH = "/api/control/bot/add";
     private static final String BOT_REMOVE_PATH = "/api/control/bot/remove";
+    private static final String BOT_START_ALL_PATH = "/api/control/bot/start-all";
     private static HttpServer server;
 
     private RuntimeControlServer() {
@@ -60,6 +61,7 @@ public final class RuntimeControlServer {
             server.createContext(BOT_STOP_PATH, RuntimeControlServer::handleBotStop);
             server.createContext(BOT_ADD_PATH, RuntimeControlServer::handleBotAdd);
             server.createContext(BOT_REMOVE_PATH, RuntimeControlServer::handleBotRemove);
+            server.createContext(BOT_START_ALL_PATH, RuntimeControlServer::handleBotStartAll);
             server.setExecutor(Executors.newFixedThreadPool(2, runnable -> {
                 Thread thread = new Thread(runnable, "runtime-control");
                 thread.setDaemon(true);
@@ -334,6 +336,28 @@ public final class RuntimeControlServer {
         } catch (Exception exception) {
             System.err.println("Bot remove failed: " + exception.getMessage());
             respond(exchange, 500, "{\"error\":\"Bot remove failed\"}");
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static void handleBotStartAll(HttpExchange exchange) throws IOException {
+        try {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                respond(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            if (!authorized(exchange)) {
+                respond(exchange, 401, "{\"error\":\"Unauthorized\"}");
+                return;
+            }
+            int before = BotPlayerManager.getInstance().getBots().size();
+            BotPlayerManager.getInstance().startAllBots();
+            int after = BotPlayerManager.getInstance().getBots().size();
+            respond(exchange, 200, "{\"ok\":true,\"started\":" + (after - before) + ",\"total\":" + after + "}");
+        } catch (Exception exception) {
+            System.err.println("Bot start-all failed: " + exception.getMessage());
+            respond(exchange, 500, "{\"error\":\"Bot start-all failed\"}");
         } finally {
             exchange.close();
         }

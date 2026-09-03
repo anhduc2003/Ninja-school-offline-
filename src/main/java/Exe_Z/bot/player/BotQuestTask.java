@@ -8,7 +8,9 @@ import Exe_Z.map.zones.Zone;
 import Exe_Z.mob.Mob;
 import Exe_Z.model.Char;
 import Exe_Z.task.Task;
+import Exe_Z.task.TaskFactory;
 import Exe_Z.task.TaskOrder;
+import Exe_Z.task.TaskTemplate;
 import Exe_Z.util.NinjaUtils;
 
 import java.util.ArrayList;
@@ -38,8 +40,19 @@ public class BotQuestTask extends BotTask {
         if (botChar == null) {
             return false;
         }
-        if (botChar.taskMain != null && mainTask == null) {
+        if (mainTask == null && botChar.taskMain != null) {
             mainTask = botChar.taskMain;
+        }
+        if (mainTask == null && botChar.taskId > 0) {
+            TaskTemplate template = Task.getTaskTemplate(botChar.taskId);
+            if (template != null) {
+                short count = 0;
+                short[] counts = template.getCounts();
+                if (counts != null && counts.length > 0 && counts[0] < 0) {
+                    count = counts[0];
+                }
+                mainTask = TaskFactory.getInstance().createTask(botChar.taskId, (byte) 0, count);
+            }
         }
         if (sideTask == null && botChar.taskOrders != null && !botChar.taskOrders.isEmpty()) {
             sideTask = botChar.taskOrders.get(0);
@@ -93,18 +106,17 @@ public class BotQuestTask extends BotTask {
     }
 
     private int getQuestMapId(Char botChar) {
-        if (botChar.taskId <= 0) {
+        if (botChar == null || botChar.taskId <= 0) {
             return -1;
         }
         if (sideTask != null && sideTask.mapId > 0) {
             return sideTask.mapId;
         }
-        if (mainTask == null) {
-            return -1;
-        }
-        int mapId = QuestMapRegistry.getMapId(botChar.taskId, mainTask.index);
-        if (mapId > 0) {
-            return mapId;
+        if (mainTask != null) {
+            int mapId = QuestMapRegistry.getMapId(botChar.taskId, mainTask.index);
+            if (mapId > 0) {
+                return mapId;
+            }
         }
         return QuestMapRegistry.getMapId(botChar.taskId, -1);
     }

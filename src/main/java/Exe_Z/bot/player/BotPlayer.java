@@ -52,7 +52,10 @@ public class BotPlayer {
             botChar.mp = botChar.maxMP;
             botChar.isDead = false;
             if (botChar.head < 0) {
-                botChar.head = botChar.gender == 0 ? 28 : 26;
+                botChar.head = (short) (botChar.gender == 0 ? 28 : 26);
+            }
+            if (botChar.taskId <= 0) {
+                botChar.taskId = 1;
             }
             int map = botChar.mapId;
             int zoneId = NinjaUtils.randomZoneId(map);
