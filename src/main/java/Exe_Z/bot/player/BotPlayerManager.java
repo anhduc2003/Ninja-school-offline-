@@ -46,9 +46,9 @@ public class BotPlayerManager {
                 }
             }
         }, 1, 1, TimeUnit.SECONDS);
-        if (botCount > 0) {
-            loadAndAutoCreateBots(botCount);
-        }
+        // Always restore enabled bots created from the admin panel. The count
+        // only controls optional automatic creation, not database restoration.
+        loadAndAutoCreateBots(botCount);
         running = true;
         Log.info("BotPlayerManager started with " + botCount + " bots (active=" + getActiveBotCount() + ")");
     }
